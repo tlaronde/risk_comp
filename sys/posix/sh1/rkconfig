@@ -1,0 +1,1574 @@
+#!/bin/sh
+# config: a KerGIS tools script to build and configure the compilation
+# 	tree.
+#
+# $Id: rkconfig,v 1.187 2024/01/27 12:52:35 tlaronde Exp $
+#
+copyright="Copyright 2004--2013, 2016--2021, 2023
+	Thierry LARONDE <tlaronde@polynum.com>"
+#  All rights reserved. 
+#  
+#  This work is under the RISK Licence.
+# 
+#  See the COPYRIGHT file at the root of the source directory.
+# 
+# !!!THIS SOFTWARE IS PROVIDED ``AS IS'' WITHOUT ANY WARRANTIES!!! 
+#                      USE IT AT YOUR OWN RISK 
+
+# NOTES: All the debug messages MUST be sent to stderr since stdout is
+# reserved for legal requested values.
+# The only message sent to stdout is OBJDIR (allowing a script to 
+# retrieve the value and continue 'cd $OBJDIR; make...').
+#
+# An alternative method may be to only set transient variables and to
+# not echo the values. YMMV.
+
+# 0) A tmpdir/ is created whatever further action is made, for this
+#	program and also for the PROJECT file. So even when
+#	printing values, this is not totally without write action. Define
+#	TMPDIR to a memory base filesystem for example, if this is a
+#	problem.
+#
+# 1) RISK can use system wide configuration for the MATRIX. This is
+#	set via MATRIXCONFDIR.
+#
+# 2) The configuration is done using the values defined with USER conf,
+# the TARGET, the MATRIX and then the PROJECT. TARGET, MATRIX or PROJECT
+# may decide to ignore a USER conf value or to forbid user to tamper
+# with some crucial values: they have the final word. If something
+# different is wanted, a special TARGET a/o MATRIX have to be provided.
+# The TARGET_2D_TYPE has to be included after MATRIX, since the search
+# for the libraries depends on the preprocessing ($CC). It is included
+# on user config request since the libraries are not to be searched
+# on install if not requested.
+#
+# 3) For safety, reset IFS after CONF inclusion.
+#
+
+# UTILITIES:
+#
+# The script needs sed(1), cat(1) and grep(1) from the very beginning.
+# ed(1), sort(1) and uniq(1) are used after verification.
+# grep(1) could be replaced, at least at the beginning by sed(1): 
+# sed(1) is hence the most fundamental of the utilities with cat(1).
+# Don't use touch(1) but the idiom: ": >some_file;". 
+# file.
+#
+
+#========== DEFINITIONS (set and define; neither loads nor stores)
+#
+#===== Customizable
+# An administrator may adjust this to point to a dir holding local
+# conffiles
+#
+: ${MATRIXCONFDIR:=/etc/risk}
+
+#================== NOTHING TO CHANGE BELOW! =====================
+#
+rk_api_version=1.20
+
+program=rkconfig
+prog_version='$Id: rkconfig,v 1.187 2024/01/27 12:52:35 tlaronde Exp $'
+
+usage="
+	$program [-d] [-h] [-V] [-ps] [-D PROJECTDIR] [CONF]
+Configure a rkcomp compliant build tree.
+If the -D PROJECTDIR option is not given, uses the working dir as PROJECTDIR.
+
+Options:
+ -D	use this Dir as PROJECTDIR [default working dir]
+ -p	Print the OBJDIR value and exit (do NOT configure)
+ -s	Show options and exit
+ -d	turn Debug information on
+ -h	display this Help and exit
+ -V	display Version information and exit
+
+ CONF
+	name of a CONF file [optional]
+
+"
+
+version="$prog_version
+Written by Thierry Laronde.
+
+$copyright
+
+All rights reserved. RISK Public Licence NO WARRANTIES!."
+
+#===== Subfunctions
+
+# We refuse to go if we are invoked as root. Period.
+#
+stop_if_root()
+{
+	if test "x$(uname)" = "xPlan9"; then
+		return 0
+  	fi
+	euid=$(id -u)
+	if test $euid -eq 0\
+		|| { test "x$(uname)" = xInterix && test $euid -eq 197108; }; then
+		echo "You are not allowed to run this as root!" >&2;
+		echo "Since you have the means to be root, you have the means not to be!" >&2;
+		echo "Create a directory writable by a normal user and config as this very user." >&2;
+		exit 1;
+	fi
+
+	return 0
+}
+
+# String manipulations. Don't require tr(1) when already requiring
+# sed(1).
+#
+tolower()
+{
+  echo "$*" | sed 'y/ABCDEFGHIJKLMNOPQRSTUVWXYZ/abcdefghijklmnopqrstuvwxyz/'
+}
+
+toupper()
+{
+  echo "$*" | sed 'y/abcdefghijklmnopqrstuvwxyz/ABCDEFGHIJKLMNOPQRSTUVWXYZ/'
+}
+
+unspace()
+{
+	echo "$1" | sed -e 's/^[ 	]*//' -e 's/[ 	]*$//' -e 'y/ 	/__/'
+}
+
+# Test against the 3 normal IFS fields: space, tab and newline.
+#
+string_is_ok()
+{
+  if test "$1" && test $(echo "$1" | sed 1q | sed 'y/ 	/__/') = "$1"; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+# Be sure to do safer things, despite all other safeties: shall be
+# relatively safe even if a blunder unlocks a safety in the safety
+# chain elsewhere.
+# So, tmpdir must be set, not root, exist and be used as a token 
+# (tmpdir set to '/ tmp'---a blank--- substituted outside quotes would 
+# have "interesting" effects when rm -fr...); we first cd to it (token) 
+# before removing files. Finally, we rmdir the dir itself.
+#
+clean_tmp()
+{
+	if test "x$tmpdir" = "x" || test "$tmpdir" = '/' || ! test -d "$tmpdir"; then
+		return
+	fi
+	( cd "$tmpdir"; rm -f *; )
+	${MATRIXRMDIR:-rmdir} "$tmpdir"
+}
+
+# The same with OBJDIR.
+#
+can_clean_objdir=NO
+
+mk_objdir()
+{
+	mkdir -p $OBJDIR/.rkcomp || error unable_to_mkdir $OBJDIR
+	can_clean_objdir=YES
+
+	# Eventually missing tools.
+	#
+	mkdir $OBJDIR/.rkcomp/bin
+
+	# rkpkg stuff
+	#
+	mkdir $OBJDIR/.rkcomp/install_bin
+	mkdir $OBJDIR/.rkcomp/install_data
+	mkdir $OBJDIR/.rkcomp/installed
+
+	# variables headers (for example iconv_defs.h)
+	#
+	mkdir $OBJDIR/.rkcomp/include
+
+	mkdir $OBJDIR/RKLIB
+}
+
+clean_objdir()
+{
+	if test "x$OBJDIR" = "x" || test "$OBJDIR" = '/' || ! test -d "$OBJDIR"\
+		|| test $can_clean_objdir != YES; then
+		return 
+	fi
+
+	( 
+		cd "$OBJDIR"
+		rm -fr .rkcomp
+		rm -fr RKLIB
+		rm -f *
+	)
+	${MATRIXRMDIR:-rmdir} "$OBJDIR"
+}
+
+# rk_exit() shall be used by a PROJECT file to let rkconfig exit cleanly
+# in case an error is detected.
+#
+rk_exit()
+{
+	clean_tmp
+	clean_objdir
+	log "PROJECT file exiting on error"
+	exit 126
+}
+
+# log writes messages to stderr with a leading "$program: ".
+#
+log()
+{
+	  echo "$program:" "$*" >&2
+}
+
+# These functions are extracted from librkcompsh and copied
+# here since we may need them before knowing our tooldir.
+# 	 
+# derel suppress the ./ and ../ in a path, and deref symlinks,
+# returning the result on stdout.
+#
+# usage: derel WORKING_DIR PATH_TO_DERELATIVATE
+#
+derel()
+{
+	# if not beginning by a slash, put WORKING_DIR before
+	derel_path=$(echo "$2" | sed 's@^\([^/]\)@'$1'/\1@')
+
+	derel_path=$(echo "$derel_path" | sed -e 's@/\./@/@g' -e 's@/\.$@@')
+	if echo "$derel_path" | grep '^/*\.\./' >/dev/null 2>&1; then
+	  error invalid_path $derel_path
+	fi
+
+	while echo "$derel_path" | grep '/\.\./' >/dev/null 2>&1; do
+	  # just the first occurrence will be replaced. We work from left
+	  # to right
+	  derel_path=$(echo "$derel_path" | sed -e 's@/[^/]*[^/.]/\.\./@/@')
+	  if echo "$derel_path" | grep '^/*\.\./' >/dev/null 2>&1; then
+	    error invalid_path $derel_path
+	  fi
+	done
+	
+	# If there is a last '/..' take this into account.
+	# Here, we are guaranteed that there is no more '/../' elsewhere
+	# and that there is something before
+	derel_path=$(echo "$derel_path" | sed 's@/[^/][^/]*/\.\.$@/@')
+
+	# suppress trailing '/' if something before
+	derel_path=$(echo "$derel_path" | sed 's@\(.\)/$@\1@')
+
+	echo "$derel_path"
+}
+
+# deref : dereferencing symlinks, returning the result on stdout.
+#
+# usage: deref path_to_be_derefed
+#	argument passed must be absolute.
+#
+deref()
+{
+	pathname="$1"
+	while [ -h "$pathname" ]; do
+	  wd=$(dirname $pathname)
+	  pathname=$(ls -l $pathname | sed 's/^.*-> *//')
+	  pathname=$(derel $wd "$pathname")
+	done
+
+	echo "$pathname"
+}
+
+error()
+{
+	case $1 in
+	  tools_build) log "I failed to build the needed tools!";
+		log "Please debug!";;
+	  option) log "This option is unknown!";
+		log USAGE "$usage";;
+	  missing_cid) log "$PROJECTDIR/CID doesn't exist!";;
+	  missing_confdir) log "$TOOLDIR does not lead to my tools!";
+	    log USAGE "$usage";;
+	  missing_conffile) log "The conffile $2 does not exist!";;
+	  missing_deps) log "The information about dependencies $PROJECT.deps does not exist!";;
+	  missing_map) log "The map $PROJECT.map does not exist!";;
+	  missing_maps) log "The maps: $2 do(es)n't exist!";;
+	  missing_options) log "The options description $PROJECT.options does not exist!";;
+	  missing_projectfile) log "The PROJECT is not defined!";
+		log "Are you in the expected directory?";;
+	  no_compiler) log "There is no compiler found!";;
+	  not_a_valid_sysconf) log "A sys conf shall not be dired!";
+		log "Your proposition was: $2";;
+	  objdir_exists) log "Directory $2 exists! Suppress it first!";;
+	  stdc) log "The compiler '$CC' is not STDC compliant!";;
+	  sysconf_not_found) log "System conf file $2 not found!";
+		log "Search path was $confpath";;
+	  unable_to_mkdir) log "Unable to make dir $2!";;
+	  wrong_api) log "The requested rkcomp version: $RK_API_VERSION doesn't match my version: $rk_api_version!";;
+	  wrong_confdir) log "$PROJECTDIR/conf has the wrong number of PROJECT files!";;
+	  wrong_map_format) log "'$2' map(s) has|have syntax errors!";;
+	  wrong_projectdir) log "Dir: $2 does not exist!";
+		log USAGE "$usage";;
+
+	esac
+
+	# don't suppress temp file if debugging
+	if test "x$debug_mode" != "xYES"; then
+		clean_tmp
+		clean_objdir
+	fi
+
+	exit 4
+}
+
+# Fully Qualifying a conf filename. Shall be called with a not empty
+# filename.
+#
+fq_conf()
+{
+	fqconf=$1
+	case $level in
+	  SYS) confpath="$TOOLDIR/sys/posix/lib $PROJECTDIR/conf $MATRIXCONFDIR";;
+	  USER) confpath="$MATRIXCONFDIR $PROJECTDIR/conf $TOOLDIR/sys/posix/lib";;
+	esac
+
+	is_dired=`echo "$fqconf" | sed '/\//!d'`
+    if test "x$is_dired" = "x" ; then
+		for p in $confpath; do
+			if test -f $p/$fqconf; then
+				echo "$p/$fqconf"
+				return 0
+			fi
+	  done
+	  echo "$fqconf"; return 1 # sysconf_not_found
+	elif test $level = "SYS" ; then
+	  echo "$fqconf"; return 2 # not_a_valid_sysconf
+	elif test -f "$fqconf" ; then
+      echo "$fqconf"; return 0
+	else
+	  echo "$fqconf"; return 3 # missing_conffile
+	fi
+}
+
+# a CONFIG file will be only sourced once. The complete filename is
+# cached, and if it is already in the cache (already sourced) it shall
+# not be sourced once more.
+# The `define' function handles this, returns 0 when entered in the
+# cache, and 1 if already present. The calling function shall not source
+# it then.
+#
+# cache has to be initialized to empty file.
+#
+define()
+{
+	if grep "$1" $cache >/dev/null 2>&1; then
+	  log "config pathname $1 already cached"
+	  return 1
+	else
+	  echo "$1" >>$cache
+	  log "config pathname $1 entered in cache"
+	  return 0
+	fi
+}
+# to allow inclusion of other conf files in a conf file
+#
+include()
+{
+	conf=$(fq_conf "$1")	
+	case $? in
+	  0) ;;
+	  1) error sysconf_not_found "$conf";;
+	  2) error not_a_valid_sysconf "$conf";;
+	  3) error missing_conffile "$conf";;
+	esac
+
+	# then simply source
+	if define "$conf"; then
+	  log "Sourcing '$conf'"
+	   . "$conf"
+	else
+	  log "'$conf' already sourced. Skipping"
+	fi
+}
+
+
+# Normalizing the maps.
+# - no empty lines
+# - no spaces at beginning
+# - no spaces between conditionals '?' and action
+# - remove comments
+#
+normalize_map()
+{
+	cat "$@"\
+		| sed -e '/^$/d' \
+		-e '/^ *#/d' \
+		-e 's/^ *//' \
+		-e 's/^\(\$[a-zA-Z_][a-zA-Z0-9_]*\)[ 	]*?[ 	]*/\1?/' \
+		-e 's/  */ /g'
+}
+
+# A machine has a normalized name for RISK. The file mach/ALIASES
+# has records that are lines starting with a '|', ending with a '|'
+# and with '|' separated strings being aliases names for the machine,
+# the first token being the canonical one.
+# If not found, the string passed is echoed.
+#
+normalize_mach()
+{
+	sed '/^#/d' "$TOOLDIR/mach/ALIASES"\
+		| {
+			while read record; do
+				junk=$(echo "$record" | sed -n "/|$1|/p")
+				if test "x$junk" != x; then
+					sed -n "/|$1|/s/^|\([^|]*\)|.*$/\\1/p" "$TOOLDIR/mach/ALIASES"
+					return
+				fi
+			done
+			# not found any
+			echo $1
+		}
+}
+
+#========== CHECKS (no writes)
+
+set -eu # can be run as sh(1) argument; so not in the shebang.
+
+stop_if_root
+
+# TMPDIR has to be set to a reasonable default for whatever MATRIX host.
+# It is # also used as a default for OBJDIRPREFIX, but this depends on
+# the host and has to be adjusted in the env since I need it before
+# dot'ing the conf.
+#
+TMPDIR="${TMPDIR:-/tmp}"
+string_is_ok "$TMPDIR"\
+  || { echo "'$TMPDIR' has blanks and it shall not!" >&2; exit 2; }
+tmpdir=$TMPDIR/$$
+if test -d $tmpdir; then
+	echo "$program: $tmpdir already exists!" >&2
+	exit 2
+fi
+
+
+#========== PROCESSING (stores)
+
+mkdir $tmpdir || { echo "$program: unable to make $tmpdir!" >&2; exit 3; }
+# remove temporary files on HUP, INT, QUIT, PIPE, TERM
+#
+trap " log '!!! Unexpected event. Try -d to debug'; clean_tmp; exit 127;"  HUP INT QUIT PIPE TERM
+
+print_objdir=NO
+debug_mode=NO
+show_options=NO
+
+# The CONF file name. The CONF is a _Bourne Shell_ compliant 
+# text that is simply sourced
+#
+CONF=
+PROJECTDIR=
+PROJECT_VERSION=
+TOOLDIR=
+# Unset some variables that are set by some shells (tcsh for example)
+# so these variables can not be passed by environment, but only in
+# a conf file. (When cascading for building missing tools we will
+# start with a pristine environment.)
+#
+TARGET=
+TARGET_ARCH=
+TARGET_MACHINE=
+TARGET_RELEASE=
+TARGET_TYPE=
+TARGET_NCPU=
+TARGET_SUBTYPE=
+TARGET_2D_TYPE=
+MATRIX=
+MATRIX_ARCH=
+MATRIX_MACHINE=
+MATRIX_RELEASE=
+MATRIX_TYPE=
+MATRIX_NCPU=
+MATRIX_SUBTYPE=
+M_CROSS_PATH_PREFIX=
+USER0=
+GROUP0=
+TARGETOPTDIR=
+TARGETSHELL=
+TARGETRMDIR=
+
+cache="$tmpdir/cache"
+cat /dev/null >"$cache"
+
+while test $# -gt 0 ; do
+	case "$1" in
+	  -D) shift;
+		PROJECTDIR=$(derel $(pwd) $1);
+		if ! test -d "$PROJECTDIR"; then
+			error wrong_projectdir $PROJECTDIR
+		fi;;
+	  -p) print_objdir=YES;;
+	  -s) show_options=YES;;
+	  -d) set -x; debug_mode=YES;;
+	  -h|--help) echo "$usage"; clean_tmp; exit 0;;
+	  -V|--version) echo "$version"; clean_tmp; exit 0;;
+	  -*) error option ;;
+	  *) CONF=$1;;
+	esac
+shift	
+done
+
+#------ MATRIX CONFIGURATION
+# If MATRIXCONFDIR is not empty and $MATRIXCONFDIR/rkcomp.conf exists
+# this is the main configuration file (decided by the admin so source
+# it.
+#
+if test "x$MATRIXCONFDIR" != "x" && test -r $MATRIXCONFDIR/rkcomp.conf ; then
+	. $MATRIXCONFDIR/rkcomp.conf
+	define $MATRIXCONFDIR/rkcomp.conf
+fi
+
+# PROJECTDIR is special: I need it rapidly and it shall not change
+# config shall be run from PROJECTDIR
+#
+if test "x$PROJECTDIR" = "x"; then
+	PROJECTDIR="$PWD"
+fi
+
+# To be here or not to be. To be sure to access what is shipped with
+# this. TOOLDIR has been cleared at the beginning and might has been
+# set by $MATRIXCONFDIR/rkcomp.conf if exists. So test .
+#
+if test "x$TOOLDIR" = "x" ; then
+	if echo "$0" | grep '^/' >/dev/null 2>&1; then
+	  TOOLDIR=$(dirname `deref "$0"`)
+	else
+	  for p in $(pwd) `echo "$PATH" | sed 'y/:/ /'`; do
+	    # ensure we are feeding deref with absolute path names
+		#
+	    p=$(derel $(pwd) $p) 
+	    if test -f $p/$0; then
+			TOOLDIR=`dirname $(deref "$p/$0")`
+			break
+		fi
+	  done
+	fi
+
+	# rkconfig is in ./sh1, so suppress it to have TOOLDIR.
+	#
+	TOOLDIR=$(derel $(pwd) $TOOLDIR)
+	TOOLDIR=${TOOLDIR%sys/posix/sh1}
+fi
+
+if test "x$TOOLDIR" = "x"; then
+	error missing_confdir 
+fi
+
+# Identify the PROJECT
+#
+if ! test -d "$PROJECTDIR/conf"; then
+	error missing_projectfile
+fi
+
+# Set the version if a CID file is here
+#
+if ! test -f "$PROJECTDIR/CID"; then
+	error missing_cid
+fi
+
+PROJECT_ID=`sed -n 's/^USRI:[ 	]*\([0-9A-F.][0-9A-F.]*\)[ 	]*$/\1/p' $PROJECTDIR/CID`
+PROJECT_VERSION=`sed -n 's/^VERSION:[ 	]*\([^ 	]*\)[ 	]*$/\1/p' $PROJECTDIR/CID`
+: ${PROJECT_VERSION:=unknown}
+
+# look for the number of candidate file. Shall be one and only one
+#
+
+PROJECT="$(ls $PROJECTDIR/conf/ | sed 's|'$PROJECTDIR/conf/'||' | sed -n -e '/^CVS$/d' -e '/^[A-Z0-9_-][A-Z0-9_-]*$/p' | sed -n 1p)"
+
+if test "x$PROJECT" = x; then
+	error wrong_confdir
+fi
+
+PROJECT="$PROJECTDIR/conf/$PROJECT"
+
+# PROJECT shall not be sourced more than once, neither included in other
+# conf file. 
+#
+define $PROJECT 
+
+# make available for us meta-informations about PROJECT (PROJECT.cid)
+#
+VENDOR=unknown
+if test -f $PROJECT.cid; then
+	. $PROJECT.cid
+fi
+
+
+#----- Required files
+
+# and a default map shall be provided too
+#
+if ! test -f "$PROJECT.map"; then 
+	error missing_map 
+fi
+
+# and a default description of dependencies giving chunks to display 
+# if a required element is missing.
+#
+if ! test -f "$PROJECT.deps"; then
+	error missing_deps
+fi
+
+# and a default options description.
+#
+if ! test -f "$PROJECT.options"; then
+	error missing_options
+fi
+
+#------TARGET ENVIRONMENT VARIABLES 
+# Can I find my stuff?
+#
+if ! test -f "$TOOLDIR/sys/posix/sh1/lib/librkcompsh"; then
+	error missing_confdir
+fi
+
+. "$TOOLDIR/sys/posix/sh1/lib/librkcompsh"
+
+if ! test -f "$TOOLDIR/sys/posix/lib/rkcomp"; then
+	error missing_confdir
+fi
+
+level=SYS
+include rkcomp
+
+# Be sure we have at least the POSIX utilities.
+#
+rk__check_required "$TOOLDIR/sys/posix/lib/rkcomp.deps" CAT ED GREP SED SHELL SORT UNIQ
+
+# There is a chicken and egg problem: to build OBJDIR I need OBJROOTDIR
+# TARGET TARGET_MACHINE MATRIX MATRIX_MACHINE that can be set in CONF,
+# because some fonctions write data in OBJDIR.
+# So start by defining these values.
+
+# First pass on CONF
+#
+CONFNAME=
+if test "x$CONF" != "x" ; then
+    CONFNAME=$(basename "$CONF")
+    if test "$CONFNAME" = "generic"; then
+		CONFNAME="${CONFNAME}JOKE"
+	fi
+    level="USER"
+    CONF=$(fq_conf "$CONF")
+    case $? in
+      0) include "$CONF"; unset IFS;; # A3
+      1) error sysconf_not_found "$CONF";;
+      2) error not_a_valid_sysconf "$CONF";;
+      3) error missing_conffile "$CONF";;
+    esac
+	else
+	  CONFNAME=generic
+fi
+
+# Defaulting if not set
+#
+: ${TARGET:=$(unspace "$(uname -s)")}
+: ${TARGET_MACHINE:=$(unspace "$(uname -m)")}
+: ${MATRIX:=$(unspace "$(uname -s)")}
+: ${MATRIX_MACHINE:=$(unspace "$(uname -m)")}
+: ${MATRIX_RELEASE:=$(unspace "$(uname -r)")}
+
+# Trying to be smart...
+#
+MATRIX=$(tolower $MATRIX)
+MATRIX_MACHINE=$(tolower $MATRIX_MACHINE)
+MATRIX_RELEASE=$(tolower $MATRIX_RELEASE)
+TARGET=$(tolower $TARGET)
+TARGET_MACHINE=$(tolower $TARGET_MACHINE)
+
+#------ STARTING TO BUILD THE TREE
+# if not set in a configfile or on command line.
+# TMPDIR is normally for transient object (maybe an evanescent memory 
+# file system; gcc(1) uses TMPDIR---defaulting to "/var/tmp"--- for its
+# transient objects); the build dirs have to be persistant; but we
+# need a reasonable default. User has to define it correctly whether in
+# a system wide $MATRIXCONFDIR/rkcomp.conf file or in the env).
+#
+: ${OBJDIRPREFIX:=$TMPDIR}
+OBJDIRPREFIX=$(unspace "$OBJDIRPREFIX")
+
+
+OBJDIR="$OBJDIRPREFIX/$VENDOR.$(basename $PROJECT)-${CONFNAME}_${MATRIX}-${MATRIX_RELEASE}-${MATRIX_MACHINE}_${TARGET}-${TARGET_MACHINE}"
+OBJDIR=$(unspace "$OBJDIR")
+
+PKGNAME=${PKGNAME:-$(basename $PROJECT)}
+PKGNAME="${PKGNAME}_$PROJECT_VERSION-$CONFNAME-${TARGET}_$TARGET_MACHINE"
+
+# if requested to print OBJDIR, do it and exit
+#
+if test "$print_objdir" = "YES"; then
+	echo "$OBJDIR"
+	clean_tmp
+	exit 0
+fi
+
+if test -d "$OBJDIR" ; then
+	error objdir_exists "$OBJDIR"
+fi
+
+mk_objdir
+
+# The directory where we put ldsonames if not found pointing
+# to the shared libraries (needed at compile time only).
+# This is defined in librkcompsh
+#
+RKLIBDIR="$OBJDIR/RKLIB"
+
+# These ones are filled by routines in librkcomp.sh.
+#
+rk_static=$OBJDIR/.rkcomp/libes.static
+rk_dshared=$OBJDIR/.rkcomp/libes.dshared
+rk_rpath=$OBJDIR/.rkcomp/libes.rpath
+rk_verif=$OBJDIR/.rkcomp/libes.verif
+: >$rk_static
+: >$rk_dshared
+: >$rk_rpath
+: >$rk_verif
+
+# The search routines depend on OBJDIR.
+#
+# A2: Since the MATRIX can ``decide'' of specific actions for
+# cross-compilation, include TARGET first.
+#
+level="USER"
+if fq_conf T_$TARGET 1>/dev/null; then
+	include T_$TARGET
+else
+	level="SYS"
+	if fq_conf T_$TARGET 1>/dev/null; then
+		include T_$TARGET
+	else
+		TARGET=posix
+		include T_posix
+	fi
+fi
+
+# A2
+#
+level="USER"
+if fq_conf M_$MATRIX 1>/dev/null; then
+	include M_$MATRIX
+else
+	level="SYS"
+	if fq_conf M_$MATRIX 1>/dev/null; then
+		include M_$MATRIX
+	else
+		MATRIX=posix
+		include M_posix
+	fi
+fi
+
+level="SYS"
+if fq_conf $TARGET_2D_TYPE 1>/dev/null; then
+	include $TARGET_2D_TYPE
+fi
+
+#------ the tree dir and files we are going to use
+# the files rkconfig is responsible for
+#
+my_config=$OBJDIR/.rkcomp/config
+
+# the map
+#
+rk_map=$OBJDIR/.rkcomp/map
+rk_list=$OBJDIR/.rkcomp/list
+
+#------ DEFINING MATRIX HOST (PARTIAL) ABI AND API
+
+# Including MATRIX machine values.
+#
+MATRIX_MACHINE=$(normalize_mach $MATRIX_MACHINE)
+if test -f "$TOOLDIR/mach/$MATRIX_MACHINE"; then
+	. "$TOOLDIR/mach/$MATRIX_MACHINE"
+else
+	log "Warning: MATRIX_MACHINE: no parm file found for $MATRIX_MACHINE."
+	log "Warning: please report maintainer to add a parm file for  $MATRIX_MACHINE."
+fi
+
+M_ENDIANNESS=${ENDIANNESS:-}
+M_WORD=${WORD:-}
+M_BYTE=${BYTE:-}
+M_WYDE=${WYDE:-}
+M_TETRA=${TETRA:-}
+M_OCTA=${OCTA:-}
+M_INT=${INT:-}
+M_LONG=${LONG:-}
+M_POINTER=${POINTER:-}
+M_FLOAT=${FLOAT:-}
+M_DOUBLE=${DOUBLE:-}
+
+#------ DEFINING THE API AND THE ABI
+
+
+# Be sure we have at least the building fundamental tools and
+# the essential libes.
+# (that may be system artefacts, like under Plan9/APE).
+#
+rk__check_required "$TOOLDIR/sys/posix/lib/rkcomp.deps" MAKE CC AR LEX YACC CLIB MATHLIB
+
+$CC -E "$TOOLDIR/sys/posix/lib/api.h" 2>/dev/null\
+  | sed -n 's/^@@\(.*\) *= *\(.*\)$/\1=\2/p' >$my_config
+
+# Including TARGET machine values.
+#
+TARGET_MACHINE=$(normalize_mach $TARGET_MACHINE)
+
+# This depends on the system compiler. Try to define by limits.h.
+#
+$CC -E "$TOOLDIR/sys/posix/lib/abi.h" 2>/dev/null\
+  | sed -n 's/^@@//p' >>$my_config
+
+# Rectify the ability set by the compile environment to match the
+# supported objects on the host
+# SUPPORTED_TYPES are the TYPES finally supported, comma separated
+#
+SUPPORTED_TYPES=
+if test "x$AR" != "x"; then
+	SUPPORTED_TYPES="static"
+fi
+
+if test "x$AR_DSHARED" != "x"; then
+	SUPPORTED_TYPES="$SUPPORTED_TYPES dshared"
+fi
+
+SUPPORTED_TYPES=$(echo "$SUPPORTED_TYPES" | sed -e 's/^ *//' -e 's/  */ /g' -e 's/ /,/g')
+
+# Suppress some LIB possibilities if not supported
+#
+for obj_type in static dshared; do
+	echo "$SUPPORTED_TYPES" | grep $obj_type >/dev/null 2>&1 || case $obj_type in
+	  static) MAKE_STATIC_LIB=NO;;
+	  dshared) MAKE_DSHARED_LIB=NO;;
+	esac
+done
+
+
+# REQUESTED_TYPES are the types of lib (for creation) requested. It will
+# be generally equal to SUPPORTED_TYPES, but user or PROJECT can decide
+# to reduce the possibilities. So we set to the maximum before sourcing
+# the config that can reset if wanted.
+#
+REQUESTED_TYPES=
+if test "x$MAKE_STATIC_LIB" = "xYES"; then
+	REQUESTED_TYPES="static"
+fi
+
+if test "x$MAKE_DSHARED_LIB" = "xYES"; then
+	REQUESTED_TYPES="$REQUESTED_TYPES dshared"
+fi
+
+#------ Time to complete the CONFIG 
+# make the `config' generated variables present
+#
+.  $my_config
+
+# Set defaults for TARGET from arch parm file if we have no information
+# from limits.h.
+#
+if test -f "$TOOLDIR/mach/$TARGET_MACHINE"; then
+	. "$TOOLDIR/mach/$TARGET_MACHINE"
+else
+	log "Warning: TARGET_MACHINE: no parm file found for $TARGET_MACHINE."
+	log "Warning: please report maintainer to add a parm file for  $TARGET_MACHINE."
+fi
+: ${T_ENDIANNESS:=${ENDIANNESS:-}}
+: ${T_WORD:=${WORD:-}}
+: ${T_BYTE:=${BYTE:-}}
+: ${T_WYDE:=${WYDE:-}}
+: ${T_TETRA:=${TETRA:-}}
+: ${T_OCTA:=${OCTA:-}}
+: ${T_INT:=${INT:-}}
+: ${T_LONG:=${LONG:-}}
+: ${T_POINTER:=${POINTER:-}}
+: ${T_FLOAT:=${FLOAT:-}}
+: ${T_DOUBLE:=${DOUBLE:-}}
+
+# if STDC not supported, stop
+#
+if test "$STDC" != "YES"; then
+	error stdc
+fi
+
+# then source the PROJECT to set variables and functions
+#
+. $PROJECT
+
+# verify the rkcomp API requested by the PROJECT
+#
+if test "x$RK_API_VERSION" != "x$rk_api_version"; then
+	error wrong_api
+fi
+
+# If TARGETPKGDIR is still unset, set to a default value.
+#
+: ${TARGETPKGDIR:=$TARGETOPTDIR/$(tolower $PROJECT)}
+
+# There can be several combined maps but there shall be a canonical
+# one: $PROJECT.map.
+#
+# The maps are specified by defining MAPS. It default to the canonical
+# one. The same exists for OPTIONS and DEPS (giving hints about
+# missing bits). But there is only one config, so that the PROJECT has
+# the high hand about was is included, what is not and the requirements.
+#
+: ${MAPS:=$PROJECT.map}
+: ${OPTIONS:=$PROJECT.options}
+: ${REQUIRED:=""}
+: ${DEPS:=$PROJECT.deps}
+
+if test $show_options = "YES" ; then
+	cat $OPTIONS
+	clean_tmp;
+	clean_objdir;
+	exit 0
+fi
+
+#------ VERIFYING REQUIRED.
+cat $DEPS >$OBJDIR/.rkcomp/deps
+
+if test "x$REQUIRED" != x; then
+	rk__check_required $OBJDIR/.rkcomp/deps $REQUIRED
+fi
+
+#------ HANDLING THE MAP
+missing=
+for file in $MAPS; do
+	if ! test -f "$file"; then
+		missing="$missing '$file'"
+	fi
+done
+if test "x$missing" != x; then
+	error missing_maps "$missing"
+fi
+
+# 0) Preprocessing.
+# normalize it: 
+# - no empty lines
+# - no spaces at beginning
+# - no spaces between conditionals '?' and action
+# - remove comments
+#
+# We will not stop at first error in order to publish the complete
+# check, and only exit on error finally after all syntax checks.
+#
+normalize_map $MAPS >$tmpdir/map
+
+ck_status=0
+while read action ftype owner mod src dst ftn args; do
+	# nb of fields; ftype must be set; owner and
+	# mod can be nil (registration of libraries not installed).
+	#
+	if test "x$dst" = x; then
+		log "Wrong nb of fields in map line: '$action' '$ftype' '$owner' '$mod' '$src' '$dst' '$ftn' '$args'"
+		ck_status=1
+	fi
+	letter=$(echo $action | sed 's/^.$\([-+.=:?@*!]\)$/\1/')
+	if test "x$letter" = x; then
+		log "Wrong action spec in map line: '$action' '$ftype' '$owner' '$mod' '$src' '$dst' '$ftn' '$args'"
+		ck_status=1
+	fi
+	if test "x$ftn" != x && test "$ftn" = '*'; then
+		log "Wrong function spec in map line: '$action' '$ftype' '$owner' '$mod' '$src' '$dst' '$ftn' '$args'"
+		ck_status=1
+	fi
+done <$tmpdir/map
+
+# 1) We first treat the conditionals, letting the action as is if
+# the condition is true, switching it to '*' (no-op) if not.
+#
+# As conditionals, the var in PROJECT.greplace are treated the same way
+# as others.
+#
+# We retrieve all the conditions and evaluate values.
+# Unset or empty variables are false (hence this works for simple
+# variables and list variables the same).
+# A condition is a variable name (prefixed with '$') with a trailing
+# '?' starting at the beginning of the line.
+#
+sed -n -e 's/^\$\([a-zA-Z_][a-zA-Z0-9_]*\)?.*$/\1/p' $tmpdir/map\
+	| sort | uniq >$tmpdir/conditions
+
+if test -s $tmpdir/conditions; then
+	while read condition; do
+		eval value=\${$condition:-}
+		if test "x$value" != "x" ; then 
+			echo "s/^\\\$$condition?//" >>$tmpdir/map.sed
+		else # unset or empty string are false
+			echo "s/^\\\$$condition?. /* /" >>$tmpdir/map.sed
+		fi
+	done <$tmpdir/conditions
+	sed -f $tmpdir/map.sed $tmpdir/map >$tmpdir/map1
+else
+	cp $tmpdir/map $tmpdir/map1
+fi
+
+# 2) Set action for '=' actions.
+#
+# We have an algebraic map (i.e. a map with rules and variables).
+# Setting the final action on the rules will set the final action on
+# the substituted (explicated) map.
+#
+preact='*'
+while read action ftype owner mod src dst ftn args; do
+	case $action in
+		'=') action="$preact";;
+		*) preact="$action";;
+	esac
+	echo "$action $ftype $owner $mod $src $dst $ftn $args"
+done <$tmpdir/map1\
+	| sed 's/ *$//' >$tmpdir/map2
+
+# 3) Substitutions.
+#
+# 3.1) List variables.
+#
+# PROJECT.greplace holds list variables (var="item0 item1...). If the
+# list is not empty, replace the prototype entry (if not no-op) by
+# as many entries with the item substituted.
+#
+# The topological order shall be preserved so we insert in order.
+# We can explicate no-op as well as real action: the no-ops will stay
+# no-ops...
+#
+# There can be cascading entries (consecutive entries with a greplace
+# variable and perhaps continuing '=' action). This block has to be
+# replaced and kept as a block for each item.
+#
+# Greplace variables impose processing both conditionals and 
+# substitutions.
+# Since greplace may be mixed, all the substitutions are done for one
+# gvar before retrieving lines concerned by next
+#
+if test -s "$PROJECT.greplace"; then
+while read var; do
+	rm -f $tmpdir/map.ed
+	lastline=$(sed -n '$=' $tmpdir/map1)
+	eval values=\${$var:-}
+	if test "x$values" != x; then
+		# Retrieve concerned lines.
+		sed -n -e "/\\\$$var/ { =; p; }"\
+			-e "/\\\${$var}/ { =; p; }" $tmpdir/map2\
+			| sed -n '/^[1-9]/ { N; s/\n/ /; p; }' >$tmpdir/lines
+		i=0
+		ipline=-1
+		while read line; do
+			iline=$(echo "$line" | sed 's/^\([1-9][0-9]*\) .*/\1/')
+			entry=$(echo "$line" | sed 's/^[1-9][0-9]* \(.*\)$/\1/')
+			if test $iline -ne $(($ipline + 1)); then
+				i=$(($i + 1))
+				rm -f $tmpdir/block$i
+			fi
+			echo "$entry" >>$tmpdir/block$i
+			ipline=$iline
+		done <$tmpdir/lines
+
+		# If entry is last line we will need to append no insert.
+		# This is obviously the last line of the last block.
+		#
+		if test $iline -eq $lastline; then
+			last_ed='a'
+		else
+			last_ed='i'
+		fi
+
+		nblock=$i
+		i=1
+		while test $i -le $nblock; do
+			# Un-special special regex characters in value.
+			#
+			sed -e 's!/!\\/!g'\
+				-e 's/\./\\./g'\
+				-e 's/\$/\\$/g'\
+				-e 's/\[/\\[/g'\
+				-e 's/\]/\\]/g'\
+				-e 's/\*/\\*/g' $tmpdir/block$i\
+				| sed -e 's!^\(.*\)$!/\1/d!' >>$tmpdir/map.ed
+			# If we are after continuing block, we must insert before.
+			# Except if deleted was at end.
+			#
+			if test $i -eq $nblock; then
+				echo "$last_ed" >>$tmpdir/map.ed
+			else
+				echo "i" >>$tmpdir/map.ed
+			fi
+			for value in $values; do # empty shall be no-op
+				regexp=$(echo "$value" | sed -e 's!/!\\/!g')
+				sed -e "s/\\\$$var/$regexp/g"\
+						-e "s/\\\${$var}/$regexp/g"\
+						$tmpdir/block$i >>$tmpdir/map.ed
+			done
+			echo "." >>$tmpdir/map.ed
+			i=$(($i + 1))
+		done
+		echo "w" >>$tmpdir/map.ed
+		echo "q" >>$tmpdir/map.ed
+		$ED $tmpdir/map2 >/dev/null 2>&1 <$tmpdir/map.ed
+	else
+		# Convert to no-op
+		$ED $tmpdir/map2 >/dev/null 2>&1 <<EOT
+g/\\\$$var/s/^. /* /
+g/\\\${$var}/s/^. /* /
+w
+q
+EOT
+	fi
+done <"$PROJECT.greplace"
+fi
+
+
+# 3.2) Simple variables.
+#
+# We replace what is specified in PROJECT.replace (greplace already
+# done).
+#
+rm -f $tmpdir/map.sed
+if test -s "$PROJECT.replace"; then
+while read var; do
+	eval value=\${$var:-}
+	regexp=$(echo "$value" | sed -e 's!/!\\/!g')
+	echo "s/\\\$$var/$regexp/g" >>$tmpdir/map.sed
+	echo "s/\\\${$var}/$regexp/g" >>$tmpdir/map.sed
+done <"$PROJECT.replace"
+fi
+
+# These ones are always replaced in PROJECT.map.
+# Since the sed(1) proceeding is  sequential, we do it last since this
+# allows developer to set variables to replace and benefits afterward
+# of the substitution. We remove the multiple // that may be
+# introduced by combining dirs, allowing a future extension of URL
+# by letting untouched such a duplicate with a leading ':'.
+#
+cat <<EOT >>$tmpdir/map.sed
+s@\\\$PROJECTDIR@$PROJECTDIR@g
+s@\\\${PROJECTDIR}@$PROJECTDIR@g
+s@\\\$OBJDIR@$OBJDIR@g
+s@\\\${OBJDIR}@$OBJDIR@g
+s@\\\$RKLIBDIR@$RKLIBDIR@g
+s@\\\${RKLIBDIR}@$RKLIBDIR@g
+s@\\([ 	]\\)\\\$TARGETPKGDIR@\\1/$TARGETPKGDIR@g
+s@\\([ 	]\\)\\\${TARGETPKGDIR}@\\1/$TARGETPKGDIR@g
+s@\\([ 	]\\)\\\$TARGETOPTDIR@\\1/$TARGETOPTDIR@g
+s@\\([ 	]\\)\\\${TARGETOPTDIR}@\\1/$TARGETOPTDIR@g
+s@\\([ 	]\\)\\\$TARGETLIBDIR@\\1/$TARGETLIBDIR@g
+s@\\([ 	]\\)\\\${TARGETLIBDIR}@\\1/$TARGETLIBDIR@g
+s@\\([ 	]\\)\\\$TARGETBINDIR@\\1/$TARGETBINDIR@g
+s@\\([ 	]\\)\\\${TARGETBINDIR}@\\1/$TARGETBINDIR@g
+s@\\([ 	]\\)\\\$TARGETSBINDIR@\\1/$TARGETSBINDIR@g
+s@\\([ 	]\\)\\\${TARGETSBINDIR}@\\1/$TARGETSBINDIR@g
+s@\\([ 	]\\)\\\$TARGETDOCDIR@\\1/$TARGETDOCDIR@g
+s@\\([ 	]\\)\\\${TARGETDOCDIR}@\\1/$TARGETDOCDIR@g
+s@\\\$USER0@$USER0@g
+s@\\\${USER0}@$USER0@g
+s@\\\$GROUP0@$GROUP0@g
+s@\\\${GROUP0}@$GROUP0@g
+s@\\\$REQUESTED_TYPES@$REQUESTED_TYPES@g
+s@\\\${REQUESTED_TYPES}@$REQUESTED_TYPES@g
+EOT
+
+sed -f $tmpdir/map.sed $tmpdir/map2 >$tmpdir/map3
+
+# 3.3) Functions.
+#
+# Since the library canonical name, the function or args can be set
+# with variables, functions have to be done last.
+#
+# The libraries handling is done via functions too (starting from 1.16).
+#
+
+: >$tmpdir/map4 # In case the map is empty
+
+while read action ftype owner mod src dst ftn args; do
+	if test "x$action" != 'x*' && test "x$ftn" != "x"; then
+		if test "\\$action" = '\.'; then
+			log "Installation data doesn't allow ftn: '$action' '$ftype' '$owner' '$mod' '$src' '$dst' '$ftn' '$args'";
+			ck_status=1;
+		fi
+		$ftn "$action" "$ftype" "$owner" "$mod" "$src" "$dst" "$args"
+	else
+		echo "$action" "$ftype" "$owner" "$mod" "$src" "$dst"
+	fi
+done <$tmpdir/map3 >$tmpdir/map4
+
+# 4) Checking.
+#
+# And finally normalize putting only one '/' when there are consecutive
+# ones.
+#
+if test -s $tmpdir/map4; then
+	sed -e 's@^//*@/@g' -e 's@\([^:/]\)//*@\1/@g' $tmpdir/map4 >$rk_map
+else
+	: >$rk_map
+fi
+
+while read action ftype owner mod src dst; do
+	# nb of fields; action and ftype must be set; owner and
+	# mod can be nil (registration of libraries not installed).
+	#
+	case $action in
+		':') if test "$ftype" != f; then
+				log "Only file can be choosen (diff'ed): '$action' '$ftype' '$owner' '$mod' '$src' '$dst' '$ftn' '$args'";
+				ck_status=1;
+			fi;;
+		'+' | '!' | '?' | '=' | '.' | '*' | '@') ;;
+		*) log "Wrong map action in line: '$action' '$ftype' '$owner' '$mod' '$src' '$dst' '$ftn' '$args'";
+			ck_status=1;;
+	esac
+	case $ftype in
+		D | d | f) ;;
+		l) if test "$src" = '*'; then
+			log "A link can not be set without a src!"
+			log "Wrong map type in line: '$action' '$ftype' '$owner' '$mod' '$src' '$dst' '$ftn' '$args'";
+			ck_status=1
+		   fi ;;
+		*) log "Wrong map type in line: '$action' '$ftype' '$owner' '$mod' '$src' '$dst' '$ftn' '$args'";
+			ck_status=1;;
+	esac
+	case "$src" in
+		'*') ;;
+		*) if test "$src" = "${src#/}"; then
+			log "'$src' must be an absolute path!"
+			ck_status=1
+		   fi;;
+	esac
+	case "$dst" in
+		'*') ;;
+		*) if test "$dst" = "${dst#/}"; then
+				log "'$dst' must be an absolute path!"
+				ck_status=1
+			fi;;
+	esac
+done <$rk_map
+
+if test $ck_status -ne 0; then
+	error wrong_map_format "$MAPS"
+fi
+
+
+# 5) Extracting the list of directories needing compilation/generation.
+#
+#
+regexp=$(echo "$PROJECTDIR/" | sed -e 's!/!\\/!g')
+sed -n '/^@ /s/^@ . [^ ][^ ]* [^ ][^ ]* \([^ ][^ ]*\) .*$/\1/p' $rk_map\
+	| sed "s/^$regexp//" >$rk_list
+
+# an easy way to publish how far we are (used in OBJDIR/Makefile)
+#
+rk_nb_dirs=$(sed -n '$=' $rk_list)
+
+#========== LIBRARIES NAMES HANDLING
+#
+# Sort and retain only one line for rpath.
+#
+$SORT $rk_rpath | $UNIQ >$tmpdir/junk
+mv $tmpdir/junk $rk_rpath
+
+if test "$debug_mode" = "YES"; then
+	set >$my_config.debug
+fi
+
+# The values in M_posix (including C_posix) will not be all put in
+# config, since we need to "compose" flags: done by rkbuild(1).
+# Indeed, here are _programs_ that shall not be changed. Variable
+# flags are handled specifically by rkbuild(1). Some supplementary
+# variables matrix related could be used by user's chunk of code in 
+# the Makefile so are included here too.
+#
+cat >$tmpdir/sed.chunk0 <<"EOT"
+/^MATRIX=/p;t
+/^MATRIX_ARCH=/p;t
+/^MATRIX_MACHINE=/p;t
+/^MATRIX_RELEASE=/p;t
+/^MATRIX_TYPE=/p;t
+/^M_CROSS_PATH_PREFIX=/p;t
+/^MAKE=/p;t
+/^CC=/p;t
+/^LEX=/p;t
+/^YACC=/p;t
+/^AR=/p;t
+/^AR_DSHARED=/p;t
+EOT
+
+level=SYS
+cat $(fq_conf rkcomp) $(fq_conf T_posix) $(fq_conf $TARGET_2D_TYPE) $PROJECT \
+  | sed -n 's@^\([A-Za-z0-9_-][A-Za-z0-9_-]*\)=.*$@/^\1=/p;t@p' \
+  >$tmpdir/sed.chunk1
+
+cat $tmpdir/sed.chunk0 $tmpdir/sed.chunk1 | $SORT | $UNIQ  >$tmpdir/sed
+
+# variables temporarily placed in my_config have been set, so we can
+# overwrite. 
+#
+# These are shared with Makefile, so no quoting for Makefile, and
+# quoting for shell.
+#
+mkf_conf=$OBJDIR/.rkcomp/Makefile.cf
+
+cat <<EOT >$mkf_conf
+PROJECTDIR=$PROJECTDIR
+PROJECT_ID=$PROJECT_ID
+PROJECT_VERSION=$PROJECT_VERSION
+TOOLDIR=$TOOLDIR
+OBJDIRPREFIX=$OBJDIRPREFIX
+OBJDIR=$OBJDIR
+RKLIBDIR=$RKLIBDIR
+PROJECT=$PROJECT
+CONF=$CONF
+PKGNAME=$PKGNAME
+MATRIXRMDIR=$MATRIXRMDIR
+TARGET=$TARGET
+TARGETPKGDIR=$TARGETPKGDIR
+TARGETSHELL=$TARGETSHELL
+TARGETRMDIR=$TARGETRMDIR
+M_FSLINK=$M_FSLINK
+M_ENDIANNESS=$M_ENDIANNESS
+M_WORD=$M_WORD
+M_BYTE=$M_BYTE
+M_WYDE=$M_WYDE
+M_TETRA=$M_TETRA
+M_OCTA=$M_OCTA
+M_INT=$M_INT
+M_LONG=$M_LONG
+M_POINTER=$M_POINTER
+M_FLOAT=$M_FLOAT
+M_DOUBLE=$M_DOUBLE
+T_ENDIANNESS=$T_ENDIANNESS
+T_WORD=$T_WORD
+T_BYTE=$T_BYTE
+T_WYDE=$T_WYDE
+T_TETRA=$T_TETRA
+T_OCTA=$T_OCTA
+T_INT=$T_INT
+T_LONG=$T_LONG
+T_POINTER=$T_POINTER
+T_FLOAT=$T_FLOAT
+T_DOUBLE=$T_DOUBLE
+EOT
+
+cat <<EOT >$my_config
+PROJECTDIR='$PROJECTDIR'
+PROJECT_ID='$PROJECT_ID'
+PROJECT_VERSION='$PROJECT_VERSION'
+TOOLDIR='$TOOLDIR'
+OBJDIRPREFIX='$OBJDIRPREFIX'
+OBJDIR='$OBJDIR'
+RKLIBDIR='$RKLIBDIR'
+PROJECT='$PROJECT'
+CONF='$CONF'
+PKGNAME='$PKGNAME'
+MATRIXRMDIR=$MATRIXRMDIR
+TARGET='$TARGET'
+TARGETPKGDIR='$TARGETPKGDIR'
+TARGETSHELL='$TARGETSHELL'
+TARGETRMDIR='$TARGETRMDIR'
+M_FSLINK='$M_FSLINK'
+EOT
+
+rkbuild_conf=$OBJDIR/.rkcomp/rkbuild.cf
+rkinstall_conf=$OBJDIR/.rkcomp/install_data/rkinstall.cf
+rkpkg_conf=$OBJDIR/.rkcomp/rkpkg.cf
+
+# The same shell variable definitions for rkpkg and rkbuild.
+#
+cp $my_config $rkbuild_conf
+cp $my_config $rkpkg_conf
+
+# Complete rkpkg with USER0 and GROUP0 if installing locally.
+#
+cat <<EOT >>$rkpkg_conf
+USER0='$USER0'
+GROUP0='$GROUP0'
+EOT
+
+# Complete rkbuild.cf with all used in the script (set -u).
+#
+cat <<EOT >>$rkbuild_conf
+MAKE='$MAKE'
+CLIB='$CLIB'
+LEXLIB='$LEXLIB'
+YACCLIB='$YACCLIB'
+OBJECT_FORMAT='$OBJECT_FORMAT'
+LDFLAGS_ELF_SONAME='$LDFLAGS_ELF_SONAME'
+LDFLAGS_ELF_RPATH='$LDFLAGS_ELF_RPATH'
+LDFLAGS_ELF_RPATH_LINK='$LDFLAGS_ELF_RPATH_LINK'
+CFLAGS='$CFLAGS'
+CFLAGS_DSHARED='$CFLAGS_DSHARED'
+LFLAGS='$LFLAGS'
+YFLAGS='$YFLAGS'
+LDFLAGS='$LDFLAGS'
+LDFLAGS_DSHARED='$LDFLAGS_DSHARED'
+ARFLAGS='$ARFLAGS'
+CPPFLAGS='$CPPFLAGS'
+CFLAGS_DSHARED='$CFLAGS_DSHARED'
+LDFLAGS_STATIC='$LDFLAGS_STATIC'
+LDFLAGS_DSHARED='$LDFLAGS_DSHARED'
+GLOBALLIB='$GLOBALLIB'
+LIB_A_TR='$LIB_A_TR'
+LIB_DSH_TR='$LIB_DSH_TR'
+DO_NOT_MAKE_STATIC='$DO_NOT_MAKE_STATIC'
+DO_NOT_USE_STATIC_LIBES='$DO_NOT_USE_STATIC_LIBES'
+EOT
+
+#----- rkinstall stuff
+#
+# Other variables useful are the ones making sense on the TARGET...
+#
+cat <<EOT >$rkinstall_conf
+PROJECTNAME='$(basename $PROJECT)'
+PROJECTDIR='$PROJECTDIR'
+PROJECT_ID='$PROJECT_ID'
+PROJECT_VERSION='$PROJECT_VERSION'
+PROJECT='$PROJECT'
+CONF='$CONF'
+PKGNAME='$PKGNAME'
+TARGETPKGDIR='$TARGETPKGDIR'
+TARGETOPTDIR='$TARGETOPTDIR'
+TARGETLIBDIR='$TARGETLIBDIR'
+TARGETBINDIR='$TARGETBINDIR'
+TARGETSBINDIR='$TARGETSBINDIR'
+TARGETDOCDIR='$TARGETDOCDIR'
+TARGETSHELL='$TARGETSHELL'
+TARGETRMDIR='$TARGETRMDIR'
+USER0='$USER0'
+GROUP0='$GROUP0'
+EOT
+
+# export some variables for {pre|post}-install programs
+#
+echo "export CONF PKGNAME TARGETPKGDIR PROJECTNAME" >>$rkinstall_conf
+
+# give a hint to rkinstall about LD_LIBRARY_PATH
+#
+if test "x$LDFLAGS_ELF_RPATH" != "x" ; then
+	echo SET_RPATH=YES >>$rkinstall_conf
+else
+	echo SET_RPATH=NO >>$rkinstall_conf
+fi
+
+# adding customization needed by project for install.
+#
+# RKINSTALL_CONF_ADD is optional.
+#
+: ${RKINSTALL_CONF_ADD:=""}
+for var in $RKINSTALL_CONF_ADD; do
+  eval "echo $var=\$$var" >>$rkinstall_conf
+done
+
+# The version of the install time scripts is fixed at configuration
+# time.
+#
+#
+cp "$TOOLDIR/sys/posix/sh1/lib/libsh" $OBJDIR/.rkcomp/install_bin
+cp "$TOOLDIR/sys/posix/lib/$TARGET.cmds" $OBJDIR/.rkcomp/install_bin/cmds
+cp "$TOOLDIR/sys/posix/sh1/rkinstall" $OBJDIR/.rkcomp
+
+# pre-install or post-install can be customized to hook some
+# supplementary actions so need to be set at the begining and be
+# left alone.
+#
+if test -e "$PROJECT.pre-install" ; then 
+	cp "$PROJECT.pre-install" $OBJDIR/.rkcomp/install_bin/pre-install
+fi
+if test -e "$PROJECT.post-install" ; then 
+	cp "$PROJECT.post-install" $OBJDIR/.rkcomp/install_bin/post-install
+fi
+
+#------ SUPPLEMENTARY TOOLS NEEDED
+#
+# M_TOOLS_REQUIRED is set by MATRIX file and can be augmented, depending
+# on needs, by PROJECT conf file.
+#
+# The variables (all uppercase) are set by lib/rkcomp.
+#
+missing_tools=
+if test "x$M_TOOLS_REQUIRED" != x; then
+	for tool in $M_TOOLS_REQUIRED; do
+		junk=$(eval echo \$$(toupper $tool))
+		if test "x$junk" = x; then
+			missing_tools="$missing_tools $tool"
+		fi
+	done
+fi
+if test "x$missing_tools" != x; then 
+	echo "OBJDIRPREFIX='$OBJDIRPREFIX'" >$tmpdir/tools$$ 
+	for tool in $missing_tools; do
+		echo "NEEDS_$(toupper $tool)=YES" >>$tmpdir/tools$$ 
+	done
+	# execute in a subshell since variable may change, the variables
+	# being unset at the begining of rkconfig(1).
+	#
+toolobjdir=$(cd $TOOLDIR/src; $SHELL "$TOOLDIR/sys/posix/sh1/rkconfig" -p $tmpdir/tools$$ 2>/dev/null)
+	if test ! -d "$toolobjdir"; then
+		echo "Compiling the missing tools ($M_TOOLS_REQUIRED)..." >&2
+		(
+		set -e
+		cd "$TOOLDIR/src"
+		cd $($SHELL "$TOOLDIR/sys/posix/sh1/rkconfig" $tmpdir/tools$$)
+		$MAKE save_space=YES >&2
+		) || error tools_build;
+
+		log "Tools correctly compiled!"
+	fi
+
+	# Reset variables for publication.
+	#
+	for tool in $missing_tools; do
+		eval $(toupper $tool)="$toolobjdir/$tool"
+	done
+fi
+
+# Complete mkf_conf incorporated in Makefiles. Tools shall now
+# be all defined with "definitive" values.
+#
+# !!! Note that we "filter" : only what has been explicitely defined
+# to be exported IS exported. Not everything!!! (see sed -n)
+#
+set | sed -n -f $tmpdir/sed | sed "s/'//g" | $SORT >>$mkf_conf
+
+#------ COPYING THE VARIABLE HEADERS
+
+# Always copy the header (just conventional macro definitions). This
+# doesn't imply usage by project.
+#
+cp "$TOOLDIR/sys/posix/lib/include/rk_iconv_defs.h"\
+	  $OBJDIR/.rkcomp/include/iconv_defs.h
+
+#------ CREATING THE MAKEFILE
+
+cat <<EOT >$tmpdir/sed
+s@##MATRIX##@$MATRIX@g
+s@##TOOLDIR##@$TOOLDIR@g
+s@##PROJECTDIR##@$PROJECTDIR@g
+s@##OBJDIRPREFIX##@$OBJDIRPREFIX@g
+s@##OBJDIR##@$OBJDIR@g
+s@##MAKE##@$MAKE@
+s@##SHELL##@$SHELL@g
+s@##NB_DIRS##@$rk_nb_dirs@g
+s@##PKGNAME##@$PKGNAME@g
+EOT
+
+sed -f $tmpdir/sed "$TOOLDIR/sys/posix/sh1/lib/Makefile" >$OBJDIR/Makefile
+
+log ""
+log "=================== CONFIGURATION DONE ======================="
+log ""
+log "(All the values are defined in $my_config.)"
+log ""
+
+# echo OBJDIR to stdout allowing scripts to continue by `cd'ing etc.
+#
+echo "$OBJDIR"
+
+#------------------POST PROCESSING
+
+if test "x$debug_mode" != "xYES"; then
+	clean_tmp
+fi
+
+exit 0

@@ -1,0 +1,53 @@
+# The POSIX default used for an unknown/unset MATRIX
+# $Id: M_posix,v 1.8 2021/03/08 08:55:23 tlaronde Exp $
+#
+# Copyright 2004, 2013, 2016--2017, 2019, 2021 Thierry LARONDE <tlaronde@polynum.com>
+# Public Domain. NO GUARANTEES!
+
+# All the values here shall be present in a whatever M_* parameter
+# file. These are exported to be available in the Makefiles.
+#
+
+#----- MATRIX environment dependent
+
+MATRIX=${MATRIX:-$(uname -s)}
+MATRIX_ARCH=${MATRIX_ARCH:-$(uname -p)}
+MATRIX_MACHINE=${MATRIX_MACHINE:-$(uname -m)}
+MATRIX_RELEASE=${MATRIX_RELEASE:-$(uname -r)}
+MATRIX_TYPE=posix
+MATRIX_NCPU=${MATRIX_NCPU:-1}
+MATRIX_SUBTYPE=GENERIC
+
+# Supplementary tools that can be provided by RISK_TOOLS and compiled
+# if missing. PROJECT shall augment the definition set by MATRIX.
+#
+M_TOOLS_REQUIRED=
+
+# If cross-compiling, there is perhaps a prefix for the target libes.
+#
+M_CROSS_PATH_PREFIX=${M_CROSS_PATH_PREFIX:-""}
+
+# By default, do not suppose symbolic links.
+M_FSLINK="cp"
+
+MATRIXRMDIR="rm"
+
+#----- There shall be a compile environment
+
+# The names are set by the TARGET, but the search is made on the
+# matrix. So we may redefine to a subset of the TARGET expectings
+# matching what the MATRIX is providing (LIB_TYPES and so on).
+#
+RK_COMPILE_ENV=${RK_COMPILE_ENV:-posix}
+
+include C_$RK_COMPILE_ENV
+
+CLIB=$(rk_which_lib_of $CLIB)
+MATHLIB=$(rk_which_lib_of $MATHLIB)
+YACCLIB=$(rk_which_lib_of $YACCLIB)
+LEXLIB=$(rk_which_lib_of $LEXLIB)
+LEXLIB=${LEXLIB:-$(rk_which_lib_of libfl__ NULL)}
+
+if test "x$ICONVLIB" != x; then
+	ICONVLIB=$(rk_which_lib_of $ICONVLIB)
+fi

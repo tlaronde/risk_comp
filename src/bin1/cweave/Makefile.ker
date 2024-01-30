@@ -1,0 +1,23 @@
+# This is a strip down rkcomp compatible Makefile.ker for generation
+# of the main program. 
+#
+
+CTANGLE = $(OBJDIR)/ctangle
+
+PROG = $(OBJDIR)/cweave
+
+COBJ = common.o cweave.o
+
+CWEBEES = cweave.c common.c
+
+LIBES =
+
+all: $(PROG)
+
+CWEBINPUTS = $(SRCDIR)
+
+cweave.c: cweave.w common.h
+common.c: common.w common.h risk.ch
+
+$(PROG): $(CTANGLE)
+

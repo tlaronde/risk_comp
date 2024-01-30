@@ -1,0 +1,9 @@
+ENDIANNESS=1234
+WORD=tetra
+BYTE=char
+WYDE=short
+TETRA=int
+OCTA="long long"
+INT=tetra
+LONG=tetra
+POINTER=tetra

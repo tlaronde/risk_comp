@@ -1,0 +1,13 @@
+# rkcomp post-install program for the KerTeX_T.
+#
+# $Id: RISK_TOOLS.post-install,v 1.1 2016/02/06 21:40:10 tlaronde Exp $
+#
+#  Copyright 2016 Thierry LARONDE <tlaronde@polynum.com>
+#  Public domain and no warranties!
+#
+
+# include the config
+. install_data/rkinstall.cf
+
+exit 0
+

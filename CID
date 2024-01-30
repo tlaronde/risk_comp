@@ -1,0 +1,15 @@
+USRI: 2.11.3
+VERSION: 1.20.0.0
+VENDOR: polynum
+FLAGS: PUBLISHED
+LANG: C
+NAME: R.I.S.K. (Reduced Instructions Set toolKit) - Compilation
+AUTHORS: Thierry Laronde <tlaronde@polynum.com>
+	cweb: Donald E. Knuth and Silvio Levy
+DESCRIPTION: the compilation part of the R.I.S.K. framework.
+REQUIRE:	
+ELEMENTS:
+LINK:
+DEPENDS:
+PROVIDE:
+COMMENTS:

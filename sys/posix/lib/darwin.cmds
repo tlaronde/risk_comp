@@ -1,0 +1,191 @@
+# $Id: darwin.cmds,v 1.15 2017/03/23 10:56:16 tlaronde Exp $
+#
+# Copyright 2005, 2012-2013 Thierry LARONDE <tlaronde@polynum.com>.
+# Copyright 2012 Devon Sean McCullough.
+# Public Domain
+# informations found in Jepson & Rothman "Mac OS X for Unix Geeks",
+# O'Reilly. (I [TL] do not have a Mac, so theory work here).
+
+# include library
+. install_bin/libsh
+
+# Symbolic links are supported.
+T_FSLINK="ln -sfh"
+
+# rk_su_cmd <cmd>
+# subsitute as USER0 to execute the given command. USER0 can perfectly
+# be an unprivileged user, or the current user.
+#
+rk_su_cmd()
+{
+	if test $(id -nu) = $USER0; then
+		$1
+	else
+		log "Switching to $USER0"
+		su $USER0 -c "$1"
+	fi
+}
+
+# rk_user_exists <user_name>
+# test for existence of user
+
+rk_user_exists ()
+{
+	# find in local domain, path /users, name property
+	if type -p dscl >/dev/null
+	then dscl . -list "/Users/$1" >/dev/null 2>&1
+	else nireport . /users name | grep -q "^$1\$"
+	fi
+	return $?
+}
+
+# rk_group_exists <group_name>
+# test for existence of group
+
+rk_group_exists ()
+{
+	if type -p dscl >/dev/null
+	then dscl . -list "/Groups/$1" >/dev/null 2>&1
+	else nireport . /groups name | grep -q "^$1\$"
+	fi
+	return $?
+}
+
+# rk_group_add <group_name>
+# add the group named <group_name> to existing groups
+
+rk_group_add ()
+{
+	log "Adding group $1"
+	if type -p dscl >/dev/null
+	then
+	    dscl . -create "/Groups/$1" passwd \*
+	    # dscl . -create "/Groups/$1" RealName $group_real_name &&
+	    # dscl . -create "/Groups/$1" PrimaryGroupID $group_id &&
+	    # dscl . -create "/Groups/$1" GroupMembership ...
+	else
+	    nicl / -create "/groups/$1" passwd \*
+	fi
+	return $?
+}
+
+# rk_user_add user=<username> [group=<group>] [home=<DEFAULT|PATH>]
+# 	[groups=<second_group>[,<third_group>...]
+# add user <username> with primary group <group> etc
+#	and disabled password to be set later.
+
+rk_user_add ()
+{
+    # Directory Services or Net Info
+	if type -p dscl >/dev/null
+	then rk_user_add_dscl "$@"
+	else rk_user_add_nicl "$@"
+	fi
+}
+
+rk_user_add_dscl ()
+{
+    # tests ok on MacOS 10.6.8 "Snow Leopard"
+    # not tested on MacOS 10.5 "Leopard" nor 10.7 "Lion"
+    # UniqueID uniqueness attempted but not guaranteed
+	while [ $# -ne 0 ]
+	do
+	  eval "$1"
+	  shift
+	done
+	if [ -z "$user" ]
+	then
+	  log "User must be specified!"
+	  return 1
+	fi
+	log "Adding user $user"
+	if dscl . -list /Users/$user >/dev/null 2>&1
+	then
+	  log "Error in creating duplicate user $user"
+	  return 1
+	fi
+	_unique_id=$((1 + $(dscl . -list /Users UniqueID | awk '{print $2}' | sort -gur | head -1)))
+	if ! (dscl . -create /Users/$user &&
+	      dscl . -create /Users/$user UniqueID $_unique_id &&
+	      dscl . -create /Users/$user UserShell /bin/bash &&
+	      dscl . -create /Users/$user Password \*)
+	then
+	  log "Error in creating user $user"
+	  return 1
+	fi
+	[ -n "$group" -o -n "$groups" ] &&
+	  for _G in `echo $group $groups | sed 'y/,/ /'`
+	    do
+	      dscl . -merge /Groups/$_G GroupMembership $user ||
+	        log "Error in adding $user to group $_G"
+	    done
+	if [ -n "$group" ]
+	then
+	  dscl . -create /Users/$user PrimaryGroupID $group ||
+	    log "Error in setting $user primary group $group"
+	fi
+	case "$home" in
+	  '');;
+	  DEFAULT) log "To create $user's home dir, try $ createhomedir -u $user";;
+	  *) dscl . -merge /users/$user NFSHomeDirectory $home ||
+	       log "Error in setting $user home dir $home";;
+	esac
+	# echo GeneratedUID ??? uid ??? gid ??? RealName ??? RecordName ??? RecordType ??? | while read key value; do echo dscl . -create /Users/$user $key $value; done
+	# dscl . -passwd /Users/$user	# prompt for "New Password: "
+}
+
+rk_user_add_nicl ()
+{
+    # not tested on MacOS 10.4 "Tiger" and earlier
+	user=
+	group=
+	home=
+	groups=
+	while [ $# -ne 0 ]; do
+	  eval $1
+	  shift
+	done
+	# user is mandatory
+	if [ "x$user" != "x" ]; then
+	  log "Adding user $user"
+	  nicl / -create /users/$user
+	  if [ $? -ne 0 ]; then
+	    log "Error in creating user"
+	    return 1
+	  fi
+	  # password will be set after. Disable it for now
+	  nicl / -create /users/$user passwd \*
+	else
+	  log "User must be specified!"
+	  return 1
+	fi
+	if [ "x$group" != "x" -o "x$groups" != "x" ]; then
+	  for grp in `echo $group $groups | sed 'y/,/ /'`; do
+	    nicl / -merge /groups/$grp users $user
+	    [ $? -eq 0 ] || log "Error in adding $user to group $grp"
+	  done
+	fi
+	if [ "x$home" != "x" ]; then
+	  if [ "$home" = "DEFAULT" ]; then
+	    log "You will have to create a home dir for user $user"
+	  else
+	    nicl / -create /users/$user home $home
+	  fi
+	fi
+	return $?
+}
+
+# rk_passwd <username>
+# change or set password for user <username>
+rk_passwd ()
+{
+	if [ -z "$1" ]; then
+	  log "Trying to change password for unspecified user (root?). No!"
+	  return 1
+	fi
+	log "Setting/changing password for user $1"
+	passwd $1
+
+	return $?
+}
+

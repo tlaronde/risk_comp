@@ -1,0 +1,86 @@
+#!/bin/sh
+# rkguess: trying to find the requested stuff on a MATRIX.
+#
+# $Id: rkguess,v 1.11 2020/11/15 09:23:24 tlaronde Exp $
+#
+#  Copyright 2012, 2016-2017, 2019--2020 Thierry LARONDE <tlaronde@polynum.com>
+#  All rights reserved. 
+#  
+#  This work is under the RISK Licence.
+# 
+#  See the COPYRIGHT file at the root of the source directory.
+# 
+# !!!THIS SOFTWARE IS PROVIDED ``AS IS'' WITHOUT ANY WARRANTIES!!! 
+#                      USE IT AT YOUR OWN RISK 
+
+if test -s /etc/os-release; then
+	HOST_SUBTYPE="$(sed -n 's/^ID=\([^ ]*\) *$/\1/p' /etc/os-release)"
+elif test -d /system/etc; then
+	HOST_SUBTYPE=android
+elif test -s /etc/slackware-version; then
+	HOST_SUBTYPE=slackware
+elif test -s /etc/fedora-release; then
+	HOST_SUBTYPE=fedora
+elif test -s /etc/gentoo-release; then
+	HOST_SUBTYPE=gentoo
+elif test -s /etc/debian_version; then
+	HOST_SUBTYPE=debian
+else
+	HOST_SUBTYPE=GENERIC
+fi
+
+# This is simply a copy of M_posix.
+#
+
+cat <<EOT
+#===== HOST
+#
+HOST=$(uname -s)
+HOST_ARCH=$(uname -p)
+HOST_MACHINE=$(uname -m)
+HOST_RELEASE=$(uname -r)
+HOST_SUBTYPE=$HOST_SUBTYPE
+
+#===== SHELLismes
+#
+SHELL=$SHELL
+: ${SHELL:=$(command -v sh)}
+ed(1)? $(command -v ed)
+sed(1)? $(command -v sed)
+grep(1)? $(command -v grep)
+tar(1)? $(command -v tar)
+pax(1)? $(command -v pax)
+ftp(1)? $(command -v ftp)
+lftp(1)? $(command -v lftp)
+wget(1)? $(command -v wget)
+
+#===== DEVEL
+#
+make(1)? $(command -v make)
+cc(1)? $(command -v cc)
+c89(1)? $(command -v c89)
+c99(1)? $(command -v c99)
+gcc(1)? $(command -v gcc)
+clang(1)? $(command -v clang)
+ar(1)? $(command -v ar)
+ld(1)? $(command -v ld)
+lex(1)? $(command -v lex)
+flex(1)? $(command -v flex)
+yacc(1)? $(command -v yacc)
+bison(1)? $(command -v bison)
+Is yacc, bison masquerading? "$(yacc --version >/dev/null 2>&1 || echo no)"
+If there is bison, m4 has to be here: $(command -v m4)
+EOT
+
+echo
+echo "#===== LIBES"
+echo "# (I'm doing it the hard way; please wait...)"
+for lib in libc libm liby libl libfl libiconv; do
+	echo "Searching $lib:"
+	if test $HOST_SUBTYPE = android; then
+		find /system/ -name "$lib.a" -o -name "$lib.so*" 2>/dev/null
+		find ${PREFIX:-/} -name "*$lib.a" -o -name "*$lib.so*" 2>/dev/null
+	else
+		find / -name "$lib.a" -o -name "$lib.so*" 2>/dev/null
+	fi
+done

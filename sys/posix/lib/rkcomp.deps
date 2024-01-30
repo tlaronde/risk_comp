@@ -1,0 +1,47 @@
+SHELL
+	A POSIX compliant (i.e. Bourne Shell) shell interpreter.
+
+CAT
+	Concatenating files and sending their content to stdout `cat'.
+
+SED
+	The stream line editor `sed'.
+
+SORT
+	Sort or merge text files `sort'.
+
+UNIQ
+	Report or filter out repeated lines in a file `uniq'.	
+
+ED
+	The only true 1D i.e. line editor `ed'.
+
+GREP
+	Get a regex in lines `grep'.
+
+MAKE
+	A POSIX compliant `make' program.
+
+CC
+	A POSIX compliant C compilation front end `c99', `c89' or `cc' or
+	`gcc' and so on.
+
+AR
+	A POSIX compliant static library archiver `ar'.
+
+LEX
+	A POSIX compliant parser generator, `lex' or `flex' for example.
+
+YACC
+	A POSIX compliant scanner generator, `yacc' or `bison' for example.
+
+CLIB
+	The standard ISO C/POSIX compliant library `libc'.
+
+MATHLIB
+	The standard ISO C/POSIX compliant math library `libm'.
+
+LEXLIB
+	The library provided by the LEX program, `libl' or `libfl' if `flex'
+	is installed and the symlink libl.a has not been made to libfl.a.
+

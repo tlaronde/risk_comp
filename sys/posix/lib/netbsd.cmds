@@ -1,0 +1,97 @@
+# $Id: netbsd.cmds,v 1.12 2017/03/23 10:56:21 tlaronde Exp $
+#
+# Copyright 2004, 2012-2013, 2017 Thierry LARONDE <tlaronde@polynum.com>
+# Public Domain
+
+# include library
+. install_bin/libsh
+
+# Symbolic links are supported.
+T_FSLINK="ln -sfh"
+
+# rk_su_cmd <cmd>
+# subsitute as USER0 to execute the given command. USER0 can perfectly
+# be an unprivileged user, or the current user.
+#
+#
+rk_su_cmd()
+{
+	if test $(id -nu) = $USER0; then
+		$1
+	else
+		log "Switching to $USER0"
+		su $USER0 -c "$1"
+	fi
+}
+
+# rk_user_exists <user_name>
+# test for existence of user 
+
+rk_user_exists ()
+{
+	grep -q "^$1:" /etc/passwd
+	return $?
+}
+
+# rk_group_exists <group_name>
+# test for existence of group
+
+rk_group_exists ()
+{
+	grep -q "^$1:" /etc/group
+	return $?
+}
+
+# rk_group_add <group_name>
+# add the group named <group_name> to existing groups
+rk_group_add ()
+{
+	log "Adding group \`$1'"
+	groupadd $1
+
+	return $?
+}
+
+# rk_user_add user=<username> [group=<group>] [home=<DEFAULT|PATH>] 
+# 	[groups=<second_group>[,<third_group>...]
+# add user <username> with primary group <group> etc
+# does NOT create home directory unless for DEFAULT
+rk_user_add ()
+{	
+	user=
+	group=
+	home=
+	groups=
+	while [ $# -ne 0 ]; do
+	  eval $1
+	  shift
+	done
+	[ "x$user" != "x" ] || { log "User must be specified!"; return 1;}
+	log "Adding user: $user group: ${group:-<unspecified>}"
+	log " secondary groups: ${groups:-<unspecified>} home: ${home:-<unspecified>}"
+	_cmd=
+	[ "x$group" = "x" ] || _cmd=" -g $group"
+	[ "x$groups" = "x" ] || _cmd="$_cmd -G $groups"
+	if [ "x$home" != "x" ]; then
+	  case $home in
+		DEFAULT) _cmd="$_cmd -m";;
+		*) _cmd="$_cmd -d $home";;
+	  esac
+	fi
+	useradd $_cmd $user
+
+	return $?
+}
+
+# rk_passwd <username>
+# change or set password for user <username>
+rk_passwd ()
+{
+	if [ $# -eq 0 -o "x$1" = "x" ]; then
+	  log "Trying to change password for unspecified user (root?).  NO!"
+	  return 1
+	fi
+	passwd $1
+
+	return $?
+}

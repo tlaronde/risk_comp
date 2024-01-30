@@ -1,0 +1,8 @@
+# A machine has a normalized name for RISK. This file
+# has records that are lines starting with a '|', ending with a '|'
+# and with '|' separated strings being aliases names for the machine,
+# the first token being the canonical one.
+|ia32|x86|x86_32|
+|amd64|x86_64|
+|armv7el|evbarm|armv7|armv7l|armv7hf|armv7elhf|cortex-a7|
+|aarch64|arm64|

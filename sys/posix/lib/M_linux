@@ -1,0 +1,64 @@
+# A Linux MATRIX
+# $Id: M_linux,v 1.18 2021/03/08 08:55:19 tlaronde Exp $
+#
+# Copyright 2004, 2013, 2016--2017, 2019, 2021 Thierry LARONDE <tlaronde@polynum.com>
+# Public Domain. NO GUARANTEES!
+
+#----- MATRIX environment dependent
+MATRIX="linux"
+MATRIX_ARCH=${MATRIX_ARCH:-$(uname -p)}
+MATRIX_MACHINE=${MATRIX_MACHINE:-$(uname -m)}
+MATRIX_RELEASE=${MATRIX_RELEASE:-$(uname -r)}
+MATRIX_TYPE=${MATRIX_TYPE:-unix}
+MATRIX_NCPU=${MATRIX_NCPU:-$(nproc || echo 1)}
+MATRIX_SUBTYPE=${MATRIX_SUBTYPE:-} # set after
+
+M_TOOLS_REQUIRED=
+
+#
+# Trying to infer SUBTYPE if not set. "GENERIC" should be used if this
+# smartness is not wanted.
+#
+if test "x$MATRIX_SUBTYPE" = x; then
+	if test -d /system/etc; then
+		MATRIX_SUBTYPE=android
+		SHELL=$PREFIX/bin/sh
+	elif test -s /etc/slackware-version; then
+		MATRIX_SUBTYPE=slackware
+	elif test -s /etc/fedora-release; then
+		MATRIX_SUBTYPE=fedora
+	elif test -s /etc/gentoo-release; then
+		MATRIX_SUBTYPE=gentoo
+	elif test -s /etc/debian_version; then
+		MATRIX_SUBTYPE=debian
+	else
+		MATRIX_SUBTYPE=GENERIC
+	fi
+fi
+
+# If cross-compiling, there is perhaps a prefix for the target libes.
+#
+M_CROSS_PATH_PREFIX=${M_CROSS_PATH_PREFIX:-""}
+
+# Symbolic links are supported.
+M_FSLINK="ln -sfn"
+
+MATRIXRMDIR="rmdir"
+
+#----- There shall be a compile environment
+#
+RK_COMPILE_ENV=${RK_COMPILE_ENV:-gcc}
+include C_$RK_COMPILE_ENV
+
+# The names are set by the TARGET, but the search is made on the
+# matrix.
+#
+CLIB=$(rk_which_lib_of $CLIB)
+MATHLIB=$(rk_which_lib_of $MATHLIB)
+YACCLIB=$(rk_which_lib_of $YACCLIB)
+LEXLIB=$(rk_which_lib_of $LEXLIB)
+LEXLIB=${LEXLIB:-$(rk_which_lib_of libfl__ NULL)}
+
+if test "x$ICONVLIB" != x; then
+	ICONVLIB=$(rk_which_lib_of $ICONVLIB)
+fi

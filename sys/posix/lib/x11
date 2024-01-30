@@ -1,0 +1,44 @@
+# These are defaults for X11
+# $Id: x11,v 1.30 2020/11/05 14:11:06 tlaronde Exp $
+#
+# Copyright 2004-2013, 2016, 2018-2020
+#	Thierry LARONDE <tlaronde@polynum.com>
+# Public Domain. NO GUARANTEES!
+
+	TARGET_2D_TYPE=x11
+
+	HEADER_SEARCH_PATH="/usr/X11R6/include:/usr/X11R7/include:$HEADER_SEARCH_PATH"
+	LIB_SEARCH_PATH="/usr/X11R6/lib:/usr/X11R7/lib:$LIB_SEARCH_PATH"
+
+# In topological order of dependency
+# Depending on the versions and the system, not all libraries are
+# there... So we will only test the smallest always there subset to
+# decide, and since there may be system dependent dependencies, the
+# X11 libes will be only dynamically linked.
+#3
+# Historical.
+XEXTLIB="$(rk_which_lib_of libXext__ X11/extensions/Xext.h)"
+#2
+# This one 
+XLIB="$(rk_which_lib_of libX11__ X11/Xlib.h)"
+#1
+XCBLIB="$(rk_which_lib_of libxcb__ xcb/xcb.h)"
+#0: only CLIB
+XAULIB="$(rk_which_lib_of libXau__ X11/Xauth.h)"
+XDMCPLIB="$(rk_which_lib_of libXdmcp__ X11/Xdmcp.h)"
+
+# X11/X.h is not a library header but is included by X11 applications.
+# Verify that the installation is correct with the strict minimum
+# of what shall be there, letting dynamic linking bringing various
+# dependencies.
+#
+if test "x$(rk_which_header_of X11/X.h)" != x \
+	&& test "x$XEXTLIB" != x && test "x$XLIB" != x \
+	&& test "x$XCBLIB" != x && test "xXAULIB"  != x \
+	&& test "x$XDMCPLIB" != x; then
+	TARGET_2D_LIBES="$XEXTLIB $XLIB $XCBLIB $XAULIB $XDMCPLIB"
+	DO_NOT_USE_STATIC_LIBES="$DO_NOT_USE_STATIC_LIBES $TARGET_2D_LIBES"
+else
+	TARGET_2D_TYPE=dumb2D
+TARGET_2D_LIBES=
+fi

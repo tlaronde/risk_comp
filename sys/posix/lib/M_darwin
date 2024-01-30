@@ -1,0 +1,49 @@
+# The Darwin matrix
+# $Id: M_darwin,v 1.19 2021/03/08 08:55:15 tlaronde Exp $
+#
+# Copyright 2005, 2016--2017, 2019, 2021 Thierry LARONDE <tlaronde@polynum.com>
+# Public Domain. NO GUARANTEES!
+
+#----- MATRIX environment dependent
+MATRIX="darwin"
+MATRIX_ARCH=${MATRIX_ARCH:-$(uname -p)}
+MATRIX_MACHINE=${MATRIX_MACHINE:-$(uname -m)}
+MATRIX_RELEASE=${MATRIX_RELEASE:-$(uname -r)}
+MATRIX_TYPE=unix
+MATRIX_NCPU=${MATRIX_NCPU:-$(sysctl -n hw.availcpu || echo 1)}
+MATRIX_SUBTYPE=GENERIC
+
+M_TOOLS_REQUIRED=
+
+# headers and libraries shall be the ones of the TARGET! But
+# these have to be accessible on the MATRIX, perhaps in a dedicated
+# place, hence the prefix for the cross-lib and cross-headers.
+#
+M_CROSS_PATH_PREFIX=${M_CROSS_PATH_PREFIX:-""}
+
+# I suppose symbolic links are supported?
+M_FSLINK="ln -sfh"
+
+MATRIXRMDIR="rmdir"
+
+#----- There shall be a compile environment
+#
+RK_COMPILE_ENV=${RK_COMPILE_ENV:-posix}
+include C_$RK_COMPILE_ENV
+
+	# Overwriting.
+	#
+	ARFLAGS="-r -csv"
+
+# The names are set by the TARGET, but the search is made on the
+# matrix.
+#
+CLIB=$(rk_which_lib_of $CLIB)
+MATHLIB=$(rk_which_lib_of $MATHLIB)
+YACCLIB=$(rk_which_lib_of $YACCLIB)
+LEXLIB=$(rk_which_lib_of $LEXLIB)
+LEXLIB=${LEXLIB:-$(rk_which_lib_of libl__ NULL)}
+
+if test "x$ICONVLIB" != x; then
+	ICONVLIB=$(rk_which_lib_of $ICONVLIB)
+fi

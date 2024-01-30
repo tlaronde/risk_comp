@@ -1,0 +1,24 @@
+The files in ctangle/ and cweave are simply a subset of the cweb 
+distributed files. 
+I [TL] have removed all the manuals, examples and so on since as far 
+as the rkcomp is concerned, the programs are only supposed to run in 
+the background of the building process.
+
+I do urge developers to download the complete set (you may too get a
+copy of "The CWEB System of Structured Documentation" by Donald E. Knuth
+and Silvio Levy, Addison-Wesley, ISBN 0-201-57569-8 which will cost
+less than printing the manual---and remember that a price of a good 
+book is nothing compared to the price of what you will learn) since 
+these are wonderful tools.
+
+Here is an address from which you can obtain infos and download the
+programs:
+
+http://www-cs-faculty.stanford.edu/~knuth/cweb.html
+
+or for the more recent updates, for ANSI C:
+
+https://github.com/ascherer/cweb/
+
+(These versions were generated from the 4.9 Andreas Scherer maintained
+sources.)

@@ -1,0 +1,11 @@
+# This is a strip down rkcomp compatible Makefile.ker for generation
+# of the main program. 
+#
+
+PROG = $(OBJDIR)/ctangle
+
+COBJ = ctangle.o common.o
+
+LIBES =
+
+all: $(PROG) 

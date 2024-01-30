@@ -1,0 +1,18 @@
+# These are defaults for Plan9 drawlib
+# $Id: 9draw,v 1.2 2018/05/15 10:03:34 tlaronde Exp $
+#
+# Copyright 2016, 2018 Thierry LARONDE <tlaronde@polynum.com>
+# Public Domain. NO GUARANTEES!
+
+	TARGET_2D_TYPE=9draw
+
+	# HEADER_SEARCH_PATH and LIB_SEARCH_PATH unchanged.
+
+DRAWLIB=$(rk_which_lib_of libdraw__ draw.h)
+
+if test "x$DRAWLIB" != x; then
+	TARGET_2D_LIBES="DRAWLIB"
+else
+	TARGET_2D_TYPE=dumb2D
+TARGET_2D_LIBES=
+fi

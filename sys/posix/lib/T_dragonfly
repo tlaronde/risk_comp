@@ -1,0 +1,158 @@
+# A DragonFly TARGET
+#
+# Copyright 2012 Yellow Rabbit <yrabbit@sdf.lonestar.org>
+# Copyright 2013, 2016-2017, 2019--2020
+#     Thierry Laronde <tlaronde@polynum.com>
+# Public Domain
+
+#----- TARGET environment dependent
+TARGET="dragonfly"
+TARGET_RELEASE=${TARGET_RELEASE:-$(uname -r)}
+TARGET_ARCH=${TARGET_ARCH:-$(uname -p)}
+TARGET_MACHINE=${TARGET_MACHINE:-$(uname -m)}
+TARGET_TYPE="unix"
+TARGET_SUBTYPE=${TARGET_SUBTYPE:-GENERIC}
+TARGET_2D_TYPE="x11"
+TARGET_NCPU=${TARGET_NCPU:-1}
+
+SYS_LIB_PATH=${SYS_LIB_PATH:-"/usr/lib:/lib"}
+HEADER_SEARCH_PATH="SYS:/usr/local/include"
+LIB_SEARCH_PATH="SYS:/usr/local/lib"
+
+OBJECT_FORMAT="ELF"
+
+# What kind of libraries are supported? static, sshared (static shared),
+# dshared (dynamic shared), or unset if use default.
+LIB_TYPES="static dshared"
+
+# The substitution expression for translating rkcomp
+# fixed library naming scheme in the host supported one. 
+# static lib
+LIB_A_TR='-e s!\(lib[^/][^/]*\)__\([0-9.][0-9.]*\)!\1.a.\2!  -e s!\(lib[^/][^/]*\)__$!\1.a!  -e s!\(lib[^/][^/]*\)__\([^0-9.]\)!\1.a\2!'
+
+# The dynamic shared lib name.
+# We take into account the fact that a lib can be not versionned.
+# So we keep all the :<version> and removed the `:` if it exists.
+LIB_DSH_TR='-e s!\(lib[^/][^/]*\)__\([0-9.][0-9]*\)!\1.so.\2!  -e s!\(lib[^/][^/]*\)__$!\1.so!  -e s!\(lib[^/][^/]*\)__\([^0-9.]\)!\1.so\2!'
+
+# Standard libes shall be mapped
+CLIB="libc__ stdio.h"
+MATHLIB="libm__ math.h"
+YACCLIB="liby__ NULL"
+LEXLIB="libl__ NULL"
+
+# POSIX XSI extensions
+ICONVLIB="libiconv__ iconv.h"
+RK_PTY_TYPE=PTY_XSI
+
+# C99
+HAVE_VSNPRINTF=YES
+
+# Some libraries may need to be linked in a dynamically linked program
+# since they call functions only in a dynamically linked CLIB.
+#
+DO_NOT_MAKE_STATIC=
+
+# Some libraries must not be used static even if provided (libdl...).
+# But this is OS dependent, not user configurable.
+#
+DO_NOT_USE_STATIC_LIBES=
+
+# Allow unprivileged install.
+#
+USER0=${USER0:-root}
+GROUP0=${GROUP0:-wheel}
+
+TARGETOPTDIR=${TARGETOPTDIR:-/usr/local}
+TARGETLIBDIR="$TARGETOPTDIR/share"
+TARGETBINDIR="$TARGETOPTDIR/bin"
+TARGETSBINDIR="$TARGETOPTDIR/sbin"
+TARGETDOCDIR="$TARGETOPTDIR/share/doc"
+TARGETTMPDIR="/tmp"
+TARGETSHELL="/bin/sh"
+TARGETRMDIR="rmdir"
+SYSTEM_ENCODING=RK_ICONV_ASCII
+T_DIR_SEP="/"
+T_PATH_SEP=":"
+
+# Map ftn so called with all fields and args i.e $# == 7.
+# ck_status is global and shall be set to non 0 (rkconfig debugging)
+# and nothing echoed.
+#
+
+# The man related functions are independant from the rootdir where the
+# hierarchy of manpages is rooted.
+
+# Tmandir() used in map for setting correct man section subdir.
+#
+# dst=some_dir/{0,*}
+#   -> some_dir/man/ if basename == 0,
+#   -> some_dir/man/man$basename if basename != 0.
+#
+Tmandir()
+{
+	if test $# -ne 7; then
+		log "Incorrect Tmandir ftn call with '$*'"
+		ck_status=1
+		return
+	fi
+	 
+	action="$1"; ftype="$2"; owner="$3"; mod="$4"; src="$5"; dst="$6";
+	# args ignored.
+
+  	rootdir=$(dirname $dst)
+	section=$(basename $dst)
+  	if test $section -eq 0; then
+    	dst="$rootdir/man"
+  	else
+    	dst="$rootdir/man/man$section"
+	fi
+
+	echo "$action" "$ftype" "$owner" "$mod" "$src" "$dst"
+}
+
+# Qualifying the files. Add the subdir and the suffix to the file.
+# Map substitution ftn (see above).
+#
+# dst=rootdir/section/manpage
+#
+Tman()
+{
+	if test $# -ne 7; then
+		log "Incorrect Tman ftn call with '$*'"
+		ck_status=1
+		return
+	fi
+	 
+	action="$1"; ftype="$2"; owner="$3"; mod="$4"; src="$5"; dst="$6";
+	# args ignored.
+
+	manpage=$(basename $dst)
+	rootdir=$(dirname $dst)
+	section=$(basename $rootdir)
+	if test "x$section" = x; then
+		log "Incorrect $0 ftn call with '$*'"
+		ck_status=1
+		return
+	fi
+
+	rootdir=$(dirname $rootdir)
+	if test $section -eq 0; then
+		dst="$rootdir/man/$manpage"
+	else
+		dst="$rootdir/man/man$section/$manpage.$section"
+	fi
+
+	echo "$action" "$ftype" "$owner" "$mod" "$src" "$dst"
+}
+
+
+# For now, the default librkcompsh version for explicating libraries map
+# instructions will do.
+# It is used only at rkconfig() time, not on the TARGET (but is TARGET
+# dependant via the regexp).
+#
+Tlibexpl()
+{
+	rk_expl_lib "$@"
+}

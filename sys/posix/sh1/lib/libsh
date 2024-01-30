@@ -1,0 +1,27 @@
+# $Id: libsh,v 1.12 2024/01/27 12:52:37 tlaronde Exp $
+#
+# Miscellanei routines used by scripts at installation time.
+#
+#  Copyright 2004,2013 Thierry LARONDE <tlaronde@polynum.com>
+#  All rights reserved. 
+#  
+#  This work is under the KerGIS Public Licence v1.0
+# 
+#  See the COPYRIGHT file at the root of the source directory or see
+#  http://www.kergis.org/licence.txt for complete information.
+# 
+# !!!THIS SOFTWARE IS PROVIDED ``AS IS'' WITHOUT ANY WARRANTIES!!! 
+#                      USE IT AT YOUR OWN RISK 
+
+# $program has to be set by application (PROJECT pre or post install)
+# dot'ting this library.
+
+#========== SUBFUNCTIONS
+
+# log simply writes messages to stderr, with a leading "$PROGRAM: ".
+#
+log()
+{
+	echo "${program:-$PROJECT}: $*" >&2
+}
+

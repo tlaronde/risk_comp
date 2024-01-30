@@ -1,0 +1,12 @@
+# These are the variables/macros that can be used in the conf.
+# The default are POSIX/X11 compliant ones.
+# $Id: RISK_TOOLS,v 1.7 2024/01/27 12:52:34 tlaronde Exp $
+#
+#  Copyright 2017, 2021, 2023 Thierry LARONDE <tlaronde@polynum.com>
+#  Public domain and no warranties!
+#  
+
+#========== THIS RISK COMP API
+#
+RK_API_VERSION=1.20
+

@@ -1,0 +1,44 @@
+# A DragonFly MATRIX
+#
+# Copyright 2012 Yellow Rabbit <yrabbit@sdf.lonestar.org>
+# Copyright 2016--2017, 2019, 2021 Thierry Laronde <tlaronde@polynum.com>
+#
+# Public Domain. NO GUARANTEES!
+
+#----- MATRIX environment dependent
+MATRIX="dragonfly"
+MATRIX_ARCH=${MATRIX_ARCH:-$(uname -p)}
+MATRIX_MACHINE=${MATRIX_MACHINE:-$(uname -m)}
+MATRIX_RELEASE=${MATRIX_RELEASE:-$(uname -r)}
+MATRIX_TYPE=unix
+MATRIX_NCPU=${MATRIX_NCPU:-$(nproc || echo 1)}
+MATRIX_SUBTYPE=GENERIC
+
+M_TOOLS_REQUIRED=
+
+# If cross-compiling, there is perhaps a prefix for the target libes.
+#
+M_CROSS_PATH_PREFIX=${M_CROSS_PATH_PREFIX:-""}
+
+# Symbolic links are supported.
+M_FSLINK="ln -sfh"
+
+MATRIXRMDIR="rmdir"
+
+#----- There shall be a compile environment
+#
+RK_COMPILE_ENV=${RK_COMPILE_ENV:-gcc}
+
+include C_$RK_COMPILE_ENV
+
+# The names are set by the TARGET, but the search is made on the
+# matrix.
+#
+CLIB=$(rk_which_lib_of $CLIB)
+MATHLIB=$(rk_which_lib_of $MATHLIB)
+YACCLIB=$(rk_which_lib_of $YACCLIB)
+LEXLIB=$(rk_which_lib_of $LEXLIB)
+
+if test "x$ICONVLIB" != x; then
+	ICONVLIB=$(rk_which_lib_of $ICONVLIB)
+fi

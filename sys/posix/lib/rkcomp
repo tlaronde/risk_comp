@@ -1,0 +1,190 @@
+# $Id: rkcomp,v 1.42 2023/07/24 10:42:35 tlaronde Exp $
+#
+# This is the RISK comp own conffile. We list what is needed and
+# what is exported and available in the Makefile for the user.
+#
+# The compilation stuff is described in C_default and is taken care of
+# specifically by rkbuild(1). These variables are described in C_posix
+# and are not present here.
+# 
+#  Copyright 2004--2012, 2016, 2019--2020
+#		Thierry LARONDE <tlaronde@polynum.com>
+#  All rights reserved. 
+#  
+#  This work is under the RISK Public Licence v1.0
+# 
+#  See the COPYRIGHT file at the root of the source directory.
+# 
+# !!!THIS SOFTWARE IS PROVIDED ``AS IS'' WITHOUT ANY WARRANTIES!!! 
+#                      USE IT AT YOUR OWN RISK 
+
+#==================================================================
+
+# First adjust the PATH, since this is used by rk_which_cmd_of().
+#
+RK_PATH="$PATH:$TOOLDIR/bin"
+
+# These ones are typically specified at config run time (possibly) on
+# command line. Once set they are readonly.
+# PROJECTDIR
+# TOOLDIR
+# PROJECT
+# CONF
+# OBJDIR
+# PKGNAME
+
+# This shall be filled by the PROJECT to tell what rkcomp `API' version
+# the conf were developped for.
+#
+RK_API_VERSION=
+
+# Some chunks can be added to the map depending on variables.
+#
+MAP_ADD=
+
+# This can be filled by PROJECT to tell to scan and replace some 
+# supplementary variables in PROJECT.map.
+#
+MAP_REPLACE=
+
+# This one clones the line for every value associated.
+#
+MAP_GREPLACE=
+
+# Same for PROJECT.list.
+#
+LIST_ADD=
+LIST_REPLACE=
+LIST_GREPLACE=
+
+# The var names added here are included in rkinstall.conf for pre and
+# post-install scripts.
+#
+RKINSTALL_CONF_ADD=
+
+#----- ABI dependencies. 
+
+# These will be set by `config' and are for TARGET only, retrieved
+# via C or POSIX headers pre-processing.
+#
+CHAR=
+SHORT=
+INT=
+LONG=
+FLOAT=
+DOUBLE=
+
+# These will be set by `config' including machines for MATRIX and
+# TARGET.
+#
+# ENDIANNESS:
+#	1234 little endian
+#	4321 big endian
+#	and VAX is special
+#
+M_ENDIANNESS=
+M_WORD=
+M_BYTE=
+M_WYDE=
+M_TETRA=
+M_OCTA=
+M_INT=
+M_LONG=
+M_POINTER=
+T_ENDIANNESS=
+T_WORD=
+T_BYTE=
+T_WYDE=
+T_TETRA=
+T_OCTA=
+T_INT=
+T_LONG=
+T_POINTER=
+
+#----- POSIX extensions
+
+# Pseudo terminal support: type of PTY_XSI, PTY_UNIX98, PTY_BSD or 
+# PTY_NONE at the moment. 
+# XSI means with posix_openpt, while UNIX98 means use "/dev/ptmx".
+#
+RK_PTY_TYPE=
+
+#----- The essential
+
+# The user can define, before calling rkconfig(1), SHELL to the
+# pathname of a POSIX compliant shell, and should use a POSIX 
+# compliant shell to run rkconfig.
+# If the variable is not defined, by the user or by the
+# shell, we search for a variant, a "sh" being expected to be
+# precisely a POSIX compliant Bourne shell and hence being searched
+# for first.
+#
+SHELL=${SHELL:-$(rk_which_cmd_of sh ash bash dash ksh)}
+
+#----- some additional programs in the compile environment
+
+# These ones shall be in a POSIX.2. But not always there...
+# We do not test for sh(1) builtins, since sh(1) is a sine qua non for
+# running these chunks of script. By order of importance (cat(1) and
+# sed(1) are used early by rkconfig as well as grep(1), but this one
+# could be replaced by some invocation of sed(1)).
+#
+CAT=${CAT:-$(rk_which_cmd_of cat)}
+SED=${SED:-$(rk_which_cmd_of sed)}
+SORT=${SORT:-$(rk_which_cmd_of sort)}
+UNIQ=${UNIQ:-$(rk_which_cmd_of uniq)}
+
+ED=${ED:-$(rk_which_cmd_of ed)}
+if test "$ED" -a \( -L "$ED" \); then 
+	junk=$(ls -l "$ED" | sed 's/^.*-> //')
+	junk=$(basename $junk)
+	if test "$junk" = busybox; then
+		log "You have busybox' ed(1) that is NOT ed(1)!"
+		log "You will need to install a real ed(1)!"
+		ED=""
+	fi
+fi
+
+GREP=${GREP:-$(rk_which_cmd_of grep)}
+
+# These are not required but can be asked for by PROJECT and can be
+# compiled if missing and unset.
+#
+CTANGLE=
+CWEAVE=
+
+#----- RKCOMP internally used variables 
+
+# affecting whether the config or the Makefile built
+# Types of lib supported at run time by TARGET.
+#
+SUPPORTED_TYPES=
+
+# Types of lib requested for creation (subset of SUPPORTED_TYPES).
+#
+REQUESTED_TYPES=
+MAKE_STATIC=
+MAKE_STATIC_LIB="YES"
+MAKE_DSHARED_LIB="YES"
+
+# If there are several scanners and parsers linked, and lex(1) and
+# yacc(1) are used, it is necessary to prefix a bunch of global names
+# to avoid namespace clashes.
+# An '_' will be added to the end of the prefix when concatenating
+# if LEX_YACC_PREFIX is set and not empty.
+#
+LEX_YACC_PREFIX=
+
+# These ones may be defined in the Makefile.ker. Recorded here to keep
+# track of the macros used (leading blank make them not present in
+# .rkcomp/config).
+#
+	USE_STATIC_LIBES=
+
+# When debugging, specially for memory allocation, the whole program,
+# including libes must perhaps use exactly the same set of special
+# routines. GLOBALLIB allows to specify a library that is added last
+# to the LIBES list but before explicitely adding CLIB. If you want to
+# debug CLIB too, just add it to the LIBES...
+#
+GLOBALLIB=

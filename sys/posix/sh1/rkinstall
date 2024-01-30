@@ -1,0 +1,483 @@
+#!/bin/sh
+# rkinstall: a KerGIS tools script to install files on a host, following
+# a described policy about the actions, the owners, the permissions...
+#
+# $Id: rkinstall,v 1.42 2023/05/08 11:50:21 tlaronde Exp $
+#
+#  Copyright 2004--2018, 2020--2021 Thierry LARONDE <tlaronde@polynum.com>
+#  All rights reserved. 
+#  
+#  This work is under the RISK Licence.
+# 
+#  See the COPYRIGHT file at the root of the source directory.
+# 
+# !!!THIS SOFTWARE IS PROVIDED ``AS IS'' WITHOUT ANY WARRANTIES!!! 
+#                      USE IT AT YOUR OWN RISK 
+
+# If rkpkg has no problems with permissions (since they are set to
+# allow writing of directories and files), we can have permissions 
+# problems since we may update an already existing hierarchy with
+# restrictive permissions. We shall only manipulate what is said to
+# be created by us, not the "kept" files and directories.
+#
+
+#========== DEFINITIONS (set and define; neither loads nor stores)
+
+TMPDIR="${TMPDIR:-/tmp}"
+export TMPDIR
+
+#---------- Nothing to change below ! ----------
+#
+program=rkinstall
+prog_version='$Id: rkinstall,v 1.42 2023/05/08 11:50:21 tlaronde Exp $'
+
+usage="
+  $program [-d] [-h] [-V] [-R rootdir]
+Install a set of files according to a .rkcomp/map policy.
+This program must be run from the directory where the files exist.
+It is normally included in the tarball.
+
+Options:
+ -R rootdir
+	 put the files below rootdir (chroot'ing). This will skip the run
+	 of the pre- and post-install programs. (Use to extract the files
+	 on a mounted file system for distribution. Actions of the pre-
+	 and post-install, supposed to take place on the TARGET have to
+	 be made by ad-hoc procedure.)
+ -d  set Debug on
+ -h  display this Help and exit
+ -V  display Version information and exit
+"
+
+version="$prog_version
+Written by Thierry Laronde.
+
+Copyright (c) 2004-2018, Thierry Laronde <tlaronde@polynum.org>
+
+All rights reserved. KerGIS Public Licence v1.0. NO WARRANTIES!."
+
+#----- Subfunctions
+#
+# Be sure to do safer things, despite all other safeties: shall be
+# relatively safe even if a blunder unlocks a safety in the safety
+# chain elsewhere.
+# So, tmpdir must be set, not root, exist and be used as a token 
+# (tmpdir set to '/ tmp'---a blank--- substituted outside quotes would 
+# have "interesting" effects when rm -fr...); we first cd to it (token) 
+# before removing files. Finally, we rmdir the dir itself.
+#
+clean_tmp()
+{
+	if test "x$tmpdir" = "x" || test "$tmpdir" = '/' || ! test -d "$tmpdir"; then
+		return
+	fi
+	( cd "$tmpdir"; rm -f *; )
+	${TARGETRMDIR:-rmdir} "$tmpdir"
+}
+
+# log is defined in the library loaded later.
+#
+error()
+{
+  case $1 in
+	enoent) log "The directory '$2' doesn't exist!";;
+	reldir) log "The root must be fully qualified without '../' sequences!";;
+    option) log "This option is unknown!";
+    log USAGE "$usage";;
+	wrong_map) log "installed.list has incorrect syntax!";;
+	missing_requested) log "Some prerequisites are missing:"
+		while read junk; do
+			log "$junk"
+		done <"$tmpdir/missing_requested"
+		;;
+  esac
+
+  clean_tmp
+  exit 3
+}
+
+# Comparing the files and making the choice is the more lengthy chunk.
+# Better define a function.
+#
+keep_old()
+{
+	if test ! -e "$rootdir$dst"; then
+		log "$pr_prefix$dst not existing, Will install."
+		return 1
+	fi
+
+    # if just the same, install new one (for owner and permissions).
+	#
+    ! cmp "installed$dst" "$rootdir$dst" 1>/dev/null 2>&1 \
+    || { 
+		log "";
+		log "$pr_prefix$dst hasn't changed. Will install same new...";
+		log "";
+		return 1;
+	}
+
+	log "===================================================="
+	log "'$pr_prefix$dst' already exists. What do you want me to do?"
+	ans=
+	while test "x$ans" != "xS"; do
+		log  ""
+		log  "  S  Skip this file (keep old one)"
+		log  "  D  show Differences between files"
+		log  "  I  Install this new version"
+		log  ""
+		log  "Your choice: "
+		read ans
+		case $ans in
+			D) if test $have_diff = YES;then 
+				log ""
+				log "		----- BEGIN DIFF ----"
+				diff -u "$rootdir$dst" installed"$dst" || :
+				log "		----- END   DIFF ----"
+				log ""
+			else
+				log "Program \`diff' not found on the host"
+			fi
+			;;
+			I|S) break;;  
+			*) ans=;;
+		esac
+	done
+	if test "x$ans" = "xS"; then
+		log ""
+		log "I will keep '$pr_prefix$dst' as is."
+		log ""
+		return 0
+	else
+		log ""
+		log "I will install the new version of '$pr_prefix$dst'."
+		log ""
+		return 1
+	fi
+}
+
+#========== CHECKS (set env; maybe loads but no stores)
+#
+set -eu # can be non executable and run as sh(1) argument.
+
+# Verify that we are at the root of our data.
+#
+if test ! -f rkinstall || ! test -d install_bin || ! test -d install_data\
+	|| ! test -f installed.list || ! test -d installed; then
+	echo "You must run me in my directory!" >&2
+	exit 1
+fi
+
+if test $(echo $TMPDIR | sed 1q | sed 'y/ 	/__/') != "$TMPDIR"; then
+	echo "TMPDIR shall not have blanks!" >&2
+	exit 2
+fi
+tmpdir="$TMPDIR/$$"
+readonly tmpdir
+if test -d "$tmpdir"; then
+	echo "$(basename 0): '$tmpdir' already exists!" >&2
+	exit 1
+fi
+
+#========== PROCESSING (stores)
+
+#----- Utilities
+. install_bin/cmds # TARGET commands; includes install_bin/libsh
+
+mkdir "$tmpdir" || { log "$(basename 0): unable to make '$tmpdir'!"; exit 2; }
+
+# Remove temporary files on HUP, INT, QUIT, PIPE, TERM.
+#
+trap " log 'Unexpected event. Try -d to debug'; clean_tmp; exit 127;"  HUP INT QUIT PIPE TERM
+
+#========== PROCESSING (stores)
+
+debug_mode=NO
+
+# options to pass to the {pre|post}-install programs
+#
+prog_options=
+rootdir=
+pr_prefix=
+while test $# -gt 0 ; do
+  case "$1" in
+	-R) shift; rootdir="$1"
+	  if ! test -d "$rootdir"; then
+	  	error enoent "$rootdir"
+	  fi
+	  rootdir=$(echo $rootdir | sed 's@/*$@/@')
+	  if test "x$(echo $rootdir|sed 's@\.\./@@g')" != "x$rootdir"; then
+		error reldir
+	  fi
+	  pr_prefix="[$rootdir]"
+		;;
+    -d) set -x; prog_options="-d"; debug_mode=YES;;
+    -h|--help) echo "$usage"; exit 0;;
+    -V|--version) echo "$version"; exit 0;;
+    *) error option ;;
+  esac
+shift  
+done
+
+# Allow a more useful message to user about the need to set
+# LD_LIBRARY_PATH.
+#
+SET_RPATH=
+if test -f install_data/rkinstall.cf; then
+	. install_data/rkinstall.cf
+fi
+
+# As the name should say, pre-install is called first; then installation
+# of the files in done before finally calling post-install...
+
+# But before doing anything, we first verify the presence of what is
+# needed: map '?' action, so what we abort if there is a problem before
+# writing anything.
+#
+log "Verifying the presence of required third parties files"
+paths_needed=
+sed -n '/^[?] /p' installed.list\
+	| while read action ftype owner mod src dst; do
+		if test -e "$rootdir$dst" ; then
+    		paths_needed="$paths_needed|$(echo $dst | sed -n 's@^\(.*\)/lib[^/]*$@\1@p'):"
+			log "$pr_prefix$dst OK found"
+		else
+			log "$pr_prefix$dst not found!"
+			echo "$pr_prefix$dst" >>"$tmpdir/missing_requested"
+		fi
+	done
+
+if test -f "$tmpdir/missing_requested"; then
+	error missing_requested
+fi
+
+# Calling the pre-install program if not just unpacking.
+#
+if test "x$rootdir" = x; then
+	if test -f install_bin/pre-install ; then
+  		log "Running the provided pre-install program"
+  		$TARGETSHELL ./install_bin/pre-install $prog_options
+	fi
+else
+  	log "Note: Assuming you have made the pre-installed actions, if any, by hand."
+fi
+
+# The installed list is supposed to be in topological order, set from
+# maps by rkpkg(1).
+# This list has metadata information. The data (files), if any, has
+# been put in the chroot dir: .rkcomp/installed/.
+#
+# The action to perform is conducted by the first character code.
+#
+# rkpkg(1) has also populated .rkcomp/install_data/ but these are not
+# installed but used by the installation programs.
+#
+
+log "Choosing to install or not preserved files"
+
+# We do not install anything but simply ask the user to choose between
+# old and new files.
+# The problem here is that in a loop, reading from a file (hence
+# the stream from file is stdin) we can not grab the user's answer by
+# "read" --- reading from stdin.
+# So we treat the files specially before and we will patch
+# the installed.list.
+#
+sed -n 's/^: .* \([^ ][^ ]*\)$/\1/p' installed.list\
+	| sort\
+	| uniq\
+	| {
+		i=0
+		while read dst; do
+			i=$(($i + 1))
+			echo "$dst" >"$tmpdir/ask$i"
+		done
+		echo "$i" >"$tmpdir/nasked"
+	}
+
+nasked=$(cat "$tmpdir/nasked")
+if diff -v 1>/dev/null 2>&1;then 
+	have_diff=YES
+else
+	have_diff=NO
+fi
+i=1
+cat /dev/null >"$tmpdir/asked.sed"
+while test $i -le $nasked; do
+	dst=$(cat "$tmpdir/ask$i")
+	regexp=$(echo $dst | sed -e 's!//*$!!' -e 's!/!\\/!g' -e 's/\./\\./g')
+	if keep_old; then
+		echo '/^: .* '"$regexp"'$/d' >>"$tmpdir/asked.sed"
+	else
+		echo 's/^: \(.* '"$regexp"'\)$/+ \1/' >>"$tmpdir/asked.sed"
+	fi
+	i=$(($i + 1))
+done
+
+log "Controling and installing the hierarchies and the data"
+#
+# Depending on what is done, this script writes what has been added
+# and only that. We keep track of it in order to be able to uninstall,
+# reversing the order.
+#
+rm -f created.list
+
+# We first install the hierarchy and the data, setting permissions so
+# that we can do it. Permissions and owners will be set afterwards.
+# We make only, and mainly for debugging during development purposes,
+# checking about the map. But we only explicitely do what we are
+# supposed to do: an incorrect action or type just stops the script.
+#
+# The real actions are only: create (delete not implemented) or do
+# nothing. Hence, we convert first the conditionals ('!', ':', '=') to
+# a real action. If not really creating, we pass to next entry.
+#
+
+preact=drop
+sed -e '/^[?] /d' installed.list | sed -f "$tmpdir/asked.sed"\
+	| while read action ftype owner mod src dst; do
+		if test "x$dst" = x; then
+			log "'$action' '$ftype' '$owner' '$mod' '$src' '$dst'"
+			error wrong_map
+		fi
+	
+		# Superficial checking.
+		#
+		case $action in
+			'+' | '!' | ':' | '=') ;; # '#' and '*' eliminated before
+			*) log "'$action' '$ftype' '$owner' '$mod' '$src' '$dst'";
+				error wrong_map;;
+		esac
+		case $ftype in
+			D | d | f | l) ;;
+			*) log "'$action' '$ftype' '$owner' '$mod' '$src' '$dst'";
+				error wrong_map;;
+		esac
+	
+		# We first reset or drop the conditional actions so that there
+		# is only '+' done if requested and needed.
+		#
+		# A kept ('!' or ':') path is let "as is", without further
+		# ownership or mod manipulations.
+		#
+		# Since '=' is polymorphic by nature, we start with this to
+		# drop it or transform it according to previous action (preact).
+		#
+		case "$action" in
+			'=') if test "\\$preact" = '\drop'; then
+					continue
+				else
+					action='+'
+				fi;;
+			'!') if ! test -e "$rootdir$dst" ; then
+					action='+'
+				else
+					preact="drop"
+					continue
+				fi;;
+			'+') ;;
+			*) error programmer_error;;
+		esac
+	
+	  		case $ftype in
+	    		D | d) if ! test -d "$rootdir$dst"; then
+					mkdir "$rootdir$dst" \
+	     			|| {
+					log "Unable to mkdir '$pr_prefix$dst'!  Skipping..."
+					preact=drop
+					continue
+				}
+					fi
+	     			chmod u+w "$rootdir$dst" # whatever mask
+	    		;;
+	    		f) rm -f "$rootdir$dst";
+	        		cp installed"$dst" "$rootdir$dst"\
+	       				|| {
+						log "Unable to cp $dst to its place! Skipping...";
+						preact=drop
+						continue
+	   				}
+	    		;;
+			'l') if ! test -e "$rootdir$src"; then
+					log "I have to link to '$pr_prefix$src' that does not exist!";
+					preact=drop
+					continue
+				fi	
+				if test -e "$rootdir$dst"; then
+					rm "$rootdir$dst"\
+					|| log "Unable to remove '$pr_prefix$dst' before linking. Hope it's OK..."
+				fi
+				failure=NO
+				if test "${T_FSLINK#ln}" = "$T_FSLINK"; then # cp
+					$T_FSLINK "$rootdir$src" "$rootdir$dst" || failure=YES
+				else # symbolic link
+					$T_FSLINK "$src" "$rootdir$dst" || failure=YES
+				fi
+				if test $failure != NO; then
+						log "Unable to create link (or copy) '$pr_prefix$src' to '$pr_prefix$dst'!"
+						preact=drop
+						continue
+				fi	
+			;;
+	  		esac
+		echo "$ftype $owner $mod $dst" >>created.list
+		preact='+'
+	done
+
+# Everything shall be in place now. Setting perhaps restrictive
+# permissions for the not existing kept files.
+#
+# Since chown(1) may reset set-user-ID and set-group-ID, we first
+# chown and after chmod.
+#
+# With an unprivileged installation, it is expected that chown to the
+# present user and group will be a succeeding no-op (this is not 
+# defined in POSIX).
+#
+log "Setting ownership and permissions..."
+while read ftype owner mod dst; do
+	chown_flags=
+	if test "$ftype" = "l"; then
+		chown_flags="-h"
+	fi
+	if test "$(uname)" != Plan9 && test "$owner" != '*'; then
+		chown $chown_flags $owner "$rootdir$dst" || true
+	fi
+	if test "$mod" != '*'; then
+		chmod $mod "$rootdir$dst"
+	fi
+done <created.list
+
+# Inform user about LD_LIBRARY_PATH if needed.
+#
+if test "x$SET_RPATH" != "xYES" ; then
+  # suppress /lib and /usr/lib
+  paths_needed=$(echo $paths_needed | sed -e 's@|/lib|@@' -e 's@|/usr/lib|@@')
+  paths_needed=$(echo $paths_needed | sed -e 'y/|/ /' -e 's/^ *//')
+  if test "x$paths_needed" != "x"; then 
+      log ""
+      log "No information was available to encode rpath in the objects."
+      log "Hence you probably need to add the following paths to LD_LIBRARY_PATH:"
+      for p in $paths_needed; do
+      log "  $p"
+      done
+  fi
+fi
+
+# Running post-install program if not just unpacking.
+#
+if test "x$rootdir" = x; then
+	if test -f install_bin/post-install ; then
+  		log "Running the provided post-install program"
+  		$TARGETSHELL ./install_bin/post-install $prog_options
+	fi
+else
+  	log "You will have to do the post-install actions, if any, by hand."
+fi
+
+#------------------POST PROCESSING
+
+clean_tmp
+
+log "Finished processing"
+
+exit 0

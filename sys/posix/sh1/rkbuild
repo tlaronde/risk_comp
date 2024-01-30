@@ -1,0 +1,1152 @@
+#!/bin/sh
+# rkbuild: a RISK comp script to build the Makefiles.
+#
+version="$Id: rkbuild,v 1.128 2024/01/27 12:52:36 tlaronde Exp $
+Written by Thierry Laronde.
+
+Copyright (c) 2004--2013, 2016--2018, 2020--2021, 2023
+	Thierry Laronde <tlaronde@polynum.org>
+	All rights reserved. KerGIS Public Licence v1.0. NO WARRANTIES!.
+"
+
+#========== DEFINITIONS (set and define; neither loads nor stores)
+#
+# Name by which this script was invoked.
+#
+program=rkbuild # to be customized?
+
+usage="
+$program [-d] [-h] [-V]  prog_subdir
+
+Build Makefile in OBJDIR/prog_sub_dir using OBJDIR/.rkcomp/config.
+Must be invoked in OBJDIR.
+
+Options:
+ -d	turn Debug information on
+ -h	display this Help and exit
+ -V	display Version information and exit
+
+ prog_subdir
+	Directory relative to PROJECTDIR-OBJDIR where Makefile.ker resides.
+
+"
+
+
+#----- Subfunctions
+
+# We refuse to go if we are invoked as root. Period.
+#
+stop_if_root()
+{
+	if test "x$(uname)" = "xPlan9"; then
+		return 0
+  	fi
+	euid=$(id -u)
+	if test $euid -eq 0\
+		|| { test "x$(uname)" = xInterix && test $euid -eq 197108; }; then
+		echo "You are not allowed to run this as root!" >&2;
+		echo "Since you have the means to be root, you have the means not to be!" >&2;
+		echo "Create a directory writable by a normal user and config as this very user." >&2;
+		exit 1;
+	fi
+
+	return 0
+}
+
+# Be sure to do safer things, despite all other safeties: shall be
+# relatively safe even if a blunder unlocks a safety in the safety
+# chain elsewhere.
+# So, tmpdir must be set, not root, exist and be used as a token 
+# (tmpdir set to '/ tmp'---a blank--- substituted outside quotes would 
+# have "interesting" effects when rm -fr...); we first cd to it (token) 
+# before removing files. Finally, we rmdir the dir itself.
+#
+clean_tmp()
+{
+	if test "x$tmpdir" = "x" || test "$tmpdir" = '/' || ! test -d "$tmpdir"; then
+		return 0  
+	fi
+	( cd "$tmpdir"; rm -f *; )
+	${MATRIXRMDIR:=rmdir} "$tmpdir"
+}
+
+error ()
+{
+	case $1 in
+	  no_prog_subdir) rk_log "$PROJECTDIR/$prog does not exist!";;
+	  makefile.ker) rk_log "Makefile.ker unreadable or inexistant!";;
+	  bad_makefile.ker) rk_log "Makefile.ker line $badline - contains explicit .o action";
+        rk_log "Modify it to eliminate the action";;
+	  missing_essentials) rk_log "A Makefile.ker shall define one (and only one)";
+		rk_log "of PROG or LIB, and perhaps DATA. None was found!";;
+	  missing_lib) rk_log "The library $2 is unknown to me!";
+		rk_log "Did the PROJECT not plan to use it?";;
+	  option) rk_log "This option is unknown!";
+		rk_log USAGE "$usage";;
+	  COBJ_not_set) rk_log "No COBJ specified! Skipping...";;
+	  PROG_not_set) rk_log "PROG is not set! Skipping...";;
+	  LIB_not_set) rk_log "LIB is not set! Skipping...";;
+	  DATA_not_set) rk_log "DATA is not set! Skipping...";;
+	  data_xor_prog_xor_lib) rk_log "A Makefile.ker shall define DATA xor PROG xor LIB, not several!";;
+	  missing_parameters) rk_log "I need at least 2 parameters!";
+		rk_log USAGE "$usage";;
+	  unable_to_mkdir) rk_log "Unable to make dir $2!";;
+	esac
+
+	# don't suppress temp file if debugging
+	#
+	if test "x$debug_mode" != "xYES"; then
+		clean_tmp
+	fi
+
+	exit 6
+}
+
+# Put in rows the lines of a file, "lines" (words) being concatenated
+# until row exceeds some length. It is then printed on stdout, with
+# the given prefix (no space between prefix and row).
+#
+# rowit prefix file_to_row boolean_escape_continuating_line
+#
+rowit ()
+{
+	_prefix="$1"
+	_file="$2"
+	_escape="$3"
+	_row=     
+	_nline=$(sed -n '$=' "$_file")
+	if test $_escape = YES; then
+		_max=72
+	else
+		_max=512
+	fi
+	_iline=0
+	while read -r _l; do
+		_iline=$(($_iline + 1))
+		if test "$_row"; then
+			_row="$_row $_l"
+		else
+			_row="$_l"
+		fi
+		if test ${#_row} -ge $_max; then
+			if test $_escape = YES && test $_iline -ne $_nline; then
+				printf '%s%s\\\n' "$_prefix" "$_row"
+			else
+				printf '%s%s\n' "$_prefix" "$_row"
+			fi
+			_row=
+		fi
+		if test $_escape = YES && test $_iline -eq 1; then
+			_prefix="	"
+		fi
+	done <"$_file"
+	if test -n "$_row"; then
+		printf '%s%s\n' "$_prefix" "$_row"
+	fi
+}
+
+# Resolve the definition (explicate) a var (in a Makefile), printing
+# tokens, one per line, on stdout.
+#
+# explicate_var var_name mkfile
+#
+explicate_var()
+{
+	# The file is uniquely named hence overwritten during recursive
+	# calls. But this is no problem since it is used at the beginning
+	# of the fn, and the result is saved in a temp file with the
+	# variable name (that should not appear in its definition) before
+	# calling perhaps another instance of this very fn.
+	#
+	cat <<EOT >"$tmpdir/_script.sed"
+/^[ 	]*$1[ 	]*=/ { 
+	s///
+:1
+	/\\\\\$/b2
+	p
+	b
+:2
+	s/\\\\\$//p
+	n
+	b1
+}
+EOT
+	sed -n -f "$tmpdir/_script.sed" "$2" \
+		| sed -e '/^$/d' -e 's/^[ 	]*//' -e 's/[ 	]*$//' \
+		| sed -f "$tmpdir/pageit.sed" \
+		| sed '/^$/d' \
+		>"$tmpdir/_$1"
+
+	explicate_file "$tmpdir/_$1" "$2"
+
+	rm "$tmpdir/_$1"
+}
+
+# Given a file, one token per line, explicate the var contained.
+#
+# explicate_file paged_file mkfile
+#
+explicate_file()
+{
+	cat "$1"\
+		| while read token; do
+			name=$(echo $token | sed 's/^$(\([^)][^)]*\))$/\1/')
+			if test "$name" != "$token"; then
+				explicate_var $name "$2"
+			elif test "$token"; then
+				echo "$token"
+			fi
+		done
+
+}
+
+# Classic -l name without lib prefix.
+#
+mk_ldname()
+{
+	basename $1 | sed 's@^lib\(..*\)\.[^.]*$@\1@'
+}
+
+# Add the runtime dependency by uncommenting (if not already
+# made) the line in libes.verif. The file will be further
+# processed when packaging but we must allow resetting the
+# compilation to a known state with Makefile:build_clean.
+#
+verif_runtime()
+{
+	ed $OBJDIR/.rkcomp/libes.verif <<EOT >/dev/null 2>&1 || true
+/^#$1?/s/^#//
+w
+q
+EOT
+}
+
+#========== CHECKS (set env; maybe loads but no stores)
+
+set -eu # can be run as sh(1) argument; so not in the shebang.
+
+stop_if_root
+
+# Loading the cnf.
+#
+if test -f .rkcomp/rkbuild.cf; then 
+	. .rkcomp/rkbuild.cf
+else
+	echo "ERROR: .rkcomp/rkbuild.cf does not exist!" >&2
+	echo "	Whether OBJDIR is wrong or is not configured. Run rkconfig first!" >&2
+	exit 2;
+fi
+if test -f "$TOOLDIR/sys/posix/sh1/lib/librkcompsh"; then
+		. $TOOLDIR/sys/posix/sh1/lib/librkcompsh
+else
+	echo "ERROR: I can not find my stuff!" >&2
+	echo "	TOOLDIR is: ${TOOLDIR:-UNSET}" >&2
+	exit 3
+fi
+
+# From now on, we will use error, hence tmpdir shall exist.
+#
+TMPDIR="${TMPDIR:-/tmp}"
+if test "$(echo $TMPDIR | sed 1q | sed 'y/ 	/__/')" != "$TMPDIR"; then
+	echo "'$TMPDIR' has blanks and shall not!" >&2
+	exit 2
+fi
+tmpdir="$TMPDIR/$$"
+if test -d "$tmpdir"; then
+	echo "$program: '$tmpdir' already exists!" >&2
+	exit 4
+fi
+readonly tmpdir
+
+#========== PROCESSING (stores)
+
+mkdir "$tmpdir" || { echo "$program: unable to make $tmpdir!" >&2; exit 5; }
+
+# handle HUP, INT, QUIT, PIPE, TERM
+#
+trap "echo 'FATAL: Interrupted' >&2; clean_tmp; exit 127;"  HUP INT QUIT PIPE TERM
+
+# The following to hold the case handled. All the used variables
+# have to be defined to default values (perhaps empty) in the rkconfig
+# generated rkbuild.cf (set -u).
+#
+is_prog=NO
+is_lib=NO
+is_data=NO
+
+if test $# -eq 0; then
+	error missing_parameters
+fi
+
+debug_mode=NO
+while test $# -gt 0 ; do
+	case "$1" in
+	  -d) set -x; debug_mode=YES;;
+	  -h|--help) echo "$usage"; exit 0;;
+	  -V|--version) echo "$version"; exit 0;;
+	  -*) error option ;;
+	  *) # setting the variables
+	    if test ! -d "$PROJECTDIR/$1"; then
+			error no_prog_subdir
+		fi
+		OBJPROGDIR=$OBJDIR/$1
+		SRCDIR=$PROJECTDIR/$1;;
+	esac
+shift	
+done
+
+#------ SAFETY
+
+readonly PROJECTDIR
+readonly SRCDIR
+readonly TOOLDIR
+readonly OBJDIR
+readonly OBJPROGDIR
+readonly RKLIBDIR
+
+#========== CHECKING INPUT FOR CONFORMANCE
+
+mkf="$SRCDIR/Makefile.ker"
+if ! test -r "$mkf"; then
+	error makefile.ker
+fi
+
+if grep '^PROG[ 	]*=' $mkf >/dev/null 2>&1; then
+  is_prog=YES
+fi
+if grep '^LIB[ 	]*=' $mkf >/dev/null 2>&1; then
+  is_lib=YES
+fi
+if grep '^DATA[ 	]*=' $mkf >/dev/null 2>&1; then
+  is_data=YES
+fi
+
+if test "$is_data" = "YES"; then
+	if test "$is_lib" = "YES" || test "$is_prog" = "YES"; then
+		error data_xor_prog_xor_lib
+	fi
+else
+	if test "$is_lib" = "YES" && test "$is_prog" = "YES"; then
+		error data_xor_prog_xor_lib
+	fi
+fi
+
+# Creating the dir if not existant
+#
+mkdir -p "$OBJPROGDIR"  || error unable_to_mkdir "$OBJPROGDIR"
+
+#========== THE PAGEIT SEDDER
+#
+# We "row" a page of tokens. We need also to page a space separated
+# line of tokens. But not all shells deal well with the escaped newline.
+# So, make it a file...
+#
+cat <<"EOT" >$tmpdir/pageit.sed
+s/[ 	][ 	]*/\
+/g
+EOT
+
+#========= LIBES AND OBJ
+# The only names rkbuild really needs to know are the ones in LIBES
+# (because CPPFLAGS, LDFLAGS, LDFLAGS_SHARED depend on that) and OBJ
+# (to generate the rules corresponding to their generation).
+# Since I don't want to write another `make' program just to
+# list the values of the variables (susV3 specifies a way to have them
+# with POSIX make but this is not, at the moment, widely available), I
+# use the simple recursive fn explicate_var defined above.
+#
+# The config sets some variables, but _not_ the Makefile settable
+# *FLAGS. The rationale is to allow the user (PROJECT) to ``add'' flags;
+# but since POSIX make(1) doesn't specify support for "+=", we need to
+# compose the flags. Hence we will add here the matrix variables, 
+# "explicate" them and finally compose the two chunks to put them in 
+# the Makefile.
+#
+# The CFLAGS is not taken from the Makefile (user) but only the
+# XCFLAGS etc. Our lib/rkbuild/Makefile chunk just publishes (and we
+# will dot the result) the "extensions". The user can set whatever
+# he wants for the canonical values, they will be ignored and 
+# overriden.
+#
+cat $OBJDIR/.rkcomp/Makefile.cf \
+	$mkf \
+	>$tmpdir/makefile
+
+#========= GENERATED OBJECTS aka PRODUCTS
+
+# .o are built from .c and .h, but these .[ch] may not exist: there 
+# may be generated from LEX, YACC or CTANGLE and may not exist in the 
+# PROJECTDIR.
+# Because we want the PROJECTDIR to be read-only and because some
+# program may try to create a file on its current working and move this
+# object to the target name, the compiling process will be handled in 
+# _OBJPROGDIR_ (this is the most important to understand). So only the 
+# SOURCES will be prepended so that there can be found.
+
+# What are the SOURCES? All the files not being a target or an infered
+# object (*.o, *.dso---rkcomp suffix for dynamically shared objects---
+# and the main targets). Indeed, we do only need to find the targets.
+#
+# Some products are well known ones: files produced by LEX or YACC and
+# that may not appear in the Makefile.ker. They will be read after
+# (see below).
+#
+# Beware! there may be comments with a ':' somewhere or an assignment
+# with a string having a colon: we need only the rules...
+#
+# there may be some macros in there, so we will explicate them as we
+# read them.
+#
+
+sed -n '/^	/!s/^[ 	]*\([^#=][^#=]*\):.*$/\1/p' "$mkf"\
+	| sed 's/[ 	][ 	]*/ /g'\
+	| sed -f "$tmpdir/pageit.sed"\
+	| sed '/^$/d'\
+	| sort | uniq\
+	>"$tmpdir/to_be_expanded"
+
+explicate_file "$tmpdir/to_be_expanded" "$tmpdir/makefile" >"$tmpdir/PRODUCTS"
+
+# .PRECIOUS target is used to indicate that it's prerequisites are...
+# precious and shall be kept. For us this is of particular interest when
+# a not final object (library, prog or data) is suffixed like an 
+# intermediate object that can be removed when using save_space option.
+#
+# The same as for PRODUCTS apply to it.
+#
+sed -n 's/^\.PRECIOUS[ 	]*:[ 	]*//p' "$tmpdir/makefile"\
+	| sed -e 's/[ 	][ 	]*/ /g'\
+ 	| sed -f "$tmpdir/pageit.sed"\
+	| sed '/^$/d'\
+	>"$tmpdir/to_be_expanded"
+
+explicate_file "$tmpdir/to_be_expanded" "$tmpdir/makefile" >"$tmpdir/PRECIOUS"
+
+# Others are directly variables. We don't use shell variables since
+# the variable definition can be very lengthy: the variables are files.
+#
+# Optimization: generally, only a few of these variables will be used.
+# Hence, in one sed(1) call verify which are used and only explicate
+# these ones, the test being: test -s "$tmdir/var", afterwards.
+#
+sed -n -e 's/^[ 	]*PROG[ 	]*=.*$/PROG/p' \
+	-e 's/^[ 	]*DATA[ 	]*=.*$/DATA/p' \
+	-e 's/^[ 	]*LIB[ 	]*=.*$/LIB/p' \
+	-e 's/^[ 	]*COBJ[ 	]*=.*$/COBJ/p' \
+	-e 's/^[ 	]*CFILES[ 	]*=.*$/CFILES/p' \
+	-e 's/^[ 	]*XDATA[ 	]*=.*$/XDATA/p' \
+	-e 's/^[ 	]*XSUFFIXES[ 	]*=.*$/XSUFFIXES/p' \
+	-e 's/^[ 	]*LIBES[ 	]*=.*$/LIBES/p' \
+	-e 's/^[ 	]*SUBDIRS[ 	]*=.*$/SUBDIRS/p' \
+	-e 's/^[ 	]*MAKE_STATIC[ 	]*=.*$/MAKE_STATIC/p' \
+	-e 's/^[ 	]*MAKE_STATIC_LIB[ 	]*=.*$/MAKE_STATIC_LIB/p' \
+	-e 's/^[ 	]*MAKE_SSHARED_LIB[ 	]*=.*$/MAKE_SSHARED_LIB/p' \
+	-e 's/^[ 	]*MAKE_DSHARED_LIB[ 	]*=.*$/MAKE_DSHARED_LIB/p' \
+	-e 's/^[ 	]*USE_STATIC_LIBES[ 	]*=.*$/USE_STATIC_LIBES/p' \
+	-e 's/^[ 	]*LEX_YACC_PREFIX[ 	]*=.*$/LEX_YACC_PREFIX/p' \
+	-e 's/^[ 	]*XCFLAGS[ 	]*=.*$/XCFLAGS/p' \
+	-e 's/^[ 	]*XLFLAGS[ 	]*=.*$/XLFLAGS/p' \
+	-e 's/^[ 	]*XYFLAGS[ 	]*=.*$/XYFLAGS/p' \
+	-e 's/^[ 	]*XARFLAGS[ 	]*=.*$/XARFLAGS/p' \
+	-e 's/^[ 	]*XLDFLAGS[ 	]*=.*$/XLDFLAGS/p' \
+	-e 's/^[ 	]*XCPPFLAGS[ 	]*=.*$/XCPPFLAGS/p' \
+	"$tmpdir/makefile" >"$tmpdir/vars"
+
+for var in `cat "$tmpdir/vars"`; do
+	explicate_var $var "$tmpdir/makefile" >"$tmpdir/$var"
+done
+
+for var in XCFLAGS XLFLAGS XYFLAGS XARFLAGS XLDFLAGS XCPPFLAGS; do
+	if test -s "$tmpdir/$var"; then
+		if test "$(sed -n '$=' "$tmpdir/$var")" -gt 1; then
+			ed "$tmpdir/$var" <<"EOT" >/dev/null 2>&1
+2,$s/^/ /
+1,$j
+w
+q
+EOT
+		fi
+	else
+		: >"$tmpdir/$var"
+	fi
+done
+
+
+#========== DETERMINING THE VALUES
+
+# if there are neither COBJ nor CFILES but a PROG or LIB, there is a 
+# problem so skip.
+#
+if test "x$is_prog" = "xYES" || test "x$is_lib" = "xYES" ; then
+	test -s "$tmpdir/COBJ" || test -s "$tmpdir/CFILES" || error COBJ_not_set
+fi
+
+# if is_prog or is_lib but PROG or LIB unset, stop this build.
+#
+if test "x$is_prog" = "xYES" && ! test -s "$tmpdir/PROG"; then
+	error PROG_not_set
+fi
+
+if test "x$is_lib" = "xYES" && ! test -s "$tmpdir/LIB"; then
+	error LIB_not_set
+fi
+
+if test "x$is_data" = "xYES" && ! test -s "$tmpdir/DATA"; then
+	error DATA_not_set
+fi
+
+# if some COBJ are relatively dired, create the intermediate
+# subdirectory (sources may be placed in subdirs without a dedicated
+# makefile --- example is libproj4).
+#
+if ! test -s "$tmpdir/SUBDIRS"; then
+	: >"$tmpdir/SUBDIRS"
+fi
+while read subdir; do
+	mkdir -p $OBJPROGDIR/$subdir
+done <"$tmpdir/SUBDIRS"
+
+# We can start the real Makefile.
+#
+makefile=$OBJPROGDIR/Makefile
+
+cat $OBJDIR/.rkcomp/Makefile.cf >"$makefile"
+
+cat <<EOT >>"$makefile"
+
+# Generated by KerGIS Tools' rkbuild
+
+SRCDIR=$SRCDIR
+OBJPROGDIR=$OBJPROGDIR
+
+EOT
+
+#========== ENSURE CORRECT PATHNAMES
+# A source is not a target, whether explicit or implied. Implied
+# target are not a problem since we will parse Makefile.ker where
+# implicit targets are, by definition, not specified.
+# So we need to prepend SRCDIR to every file
+# corresponding to a pattern matching the POSIX value of SUFFIXES plus
+# the .data (for raw data that needs to be transformed that is KerGIS
+# Tools addition---verbatim data do NOT need a Makefile since it can be
+# copied as is by rkinstall).
+# First, suppress from products all names that are not suffixed by one
+# of the SUFFIXES + .h + .data. (we add XSI too) and .iw for included
+# CWEB files. 
+# *.dso, *.o *.a don't need to be taken into account.
+#
+# dired products (having a '/' are discarded).
+#
+cat $tmpdir/PRODUCTS | sort | uniq \
+ | sed -n -e '/^\//d' -e '/\.[cpylhw]~*$/p' \
+	-e '/\.iw~*$/p' \
+	-e '/\.sh~*$/p' \
+	-e '/\.data~*$/p' \
+	-e '/\.web~*$/p' \
+	-e '/\.pool~*$/p' \
+	-e '/\.tex~*$/p' \
+	>"$tmpdir/prods"
+
+
+# In fact, for efficiency, we are going to convert in the Makefile all 
+# suffixed non absolute dired names to SRCDIR prepended one; and revert
+# the PRODUCTS afterwards.
+#
+# Note that we do not take into account tokens with partial variables
+# definitions. Consider this as a feature. For special cases, just
+# prepend $(SRCDIR)/ to existing data in the src directory that is 
+# partially defined by a variable (example: switch to some source files
+# $(THIS).w; prepend the CTANGLE source: $(SRCDIR)/$(THIS).w).
+#
+# XXX We are assuming here that we are allowed to use pathnames as
+# target names. We must explicitely list the characters to be found
+# delimiting a pathname, since taking the complement of a class is not
+# enough (because of locales). This is definitively fragile.
+#
+sed -n -e 's/\./\\./g' \
+  -e 's@^\(.*\)$@s!^\\$(SRCDIR)/\1\\([;:|\&) 	\\\\]\\)!\1\\1!g@p' \
+  "$tmpdir/prods" >$tmpdir/sed
+
+sed -n -e 's/\./\\./g' \
+ -e 's@^\(.*\)@s!^\\$(SRCDIR)/\1\\$!\1!g@p' "$tmpdir/prods" >>$tmpdir/sed
+
+sed -n -e 's/\./\\./g' \
+ -e 's@^\(.*\)$@s!\\([= 	]\\)\\$(SRCDIR)/\1\\([<>:;|\&) 	\\\\]\\)!\\1\1\\2!g@p' \
+  "$tmpdir/prods" >>$tmpdir/sed
+
+sed -n -e 's/\./\\./g' \
+ -e 's@^\(.*\)$@s!\\([= 	]\\)\\$(SRCDIR)/\1$!\\1\1!g@p' \
+ "$tmpdir/prods" >>$tmpdir/sed
+
+# prepend all before reverting for PRODUCTS
+# XXX to isolate the patterns, I need a space before and after. If there
+# is only one, the pattern will match the first, but since the space is
+# "used" before, it is not available after. So I double all...
+#
+sed -e 's/ /  /g' -e 's/	/	 /g' -e 's/^	 /	/' \
+  -e 's!\([= 	]\)\([^/$|&<>; 	][^|<>&; 	]*\)\.\([cpylhw][^a-zA-Z0-9_/.-]\)!\1\$(SRCDIR)/\2.\3!g' \
+  -e 's!\([= 	]\)\([^/$|&<>; 	][^|<>&; 	]*\)\.\([cpylhw]\)$!\1\$(SRCDIR)/\2.\3!g' \
+  -e 's!\([= 	]\)\([^/$|&<>; 	][^|<>&; 	]*\)\.\(iw[^a-zA-Z0-9_/.-]\)!\1\$(SRCDIR)/\2.\3!g' \
+  -e 's!\([= 	]\)\([^/$|&<>; 	][^|<>&; 	]*\)\.\(iw\)$!\1\$(SRCDIR)/\2.\3!g' \
+  -e 's!\([= 	]\)\([^/$|&;<> 	][^|<>&; 	]*\)\.\(sh[^a-zA-Z0-9_/.-]\)!\1\$(SRCDIR)/\2.\3!g' \
+  -e 's!\([= 	]\)\([^/$|&;<> 	][^|<>&; 	]*\)\.\(sh\)$!\1\$(SRCDIR)/\2.\3!g' \
+  -e 's!\([= 	]\)\([^/$|&;<> 	][^|<>&; 	]*\)\.\(data[^a-zA-Z0-9_/.-]\)!\1\$(SRCDIR)/\2.\3!g' \
+  -e 's!\([= 	]\)\([^/$|&;<> 	][^|<>&; 	]*\)\.\(data\)$!\1\$(SRCDIR)/\2.\3!g' \
+  -e 's!\([= 	]\)\([^/$|&;<> 	][^|<>&; 	]*\)\.\(web[^a-zA-Z0-9_/.-]\)!\1\$(SRCDIR)/\2.\3!g' \
+  -e 's!\([= 	]\)\([^/$|&;<> 	][^|<>&; 	]*\)\.\(web\)$!\1\$(SRCDIR)/\2.\3!g' \
+  -e 's!\([= 	]\)\([^/$|&;<> 	][^|<>&; 	]*\)\.\(pool[^a-zA-Z0-9_/.-]\)!\1\$(SRCDIR)/\2.\3!g' \
+  -e 's!\([= 	]\)\([^/$|&;<> 	][^|<>&; 	]*\)\.\(pool\)$!\1\$(SRCDIR)/\2.\3!g' \
+  -e 's!\([= 	]\)\([^/$|&;<> 	][^|<>&; 	]*\)\.\(tex[^a-zA-Z0-9_/.-]\)!\1\$(SRCDIR)/\2.\3!g' \
+  -e 's!\([= 	]\)\([^/$|&<>; 	][^|<>&; 	]*\)\.\(tex\)$!\1\$(SRCDIR)/\2.\3!g' \
+  -e 's!\([= 	]\)\([^/$|&<>; 	][^|<>&; 	]*\)\.\(ch[^a-zA-Z0-9_/.-]\)!\1\$(SRCDIR)/\2.\3!g' \
+  -e 's!\([= 	]\)\([^/$|&<>; 	][^|<>&; 	]*\)\.\(ch\)$!\1\$(SRCDIR)/\2.\3!g' \
+  -e 's/  / /g' "$mkf" >"$tmpdir/mkf.dired" # keep for debugging
+
+  # Then revert the products.
+  #
+sed -f $tmpdir/sed "$tmpdir/mkf.dired" >>"$makefile"
+
+# XXX From now on, we will handle the pathnames as adjusted in the
+# $makefile, without doing another guess.
+# So we update the definition of CFILES since some files can, and
+# generally are, prefixed now since they are not produced.
+#
+if test -s "$tmpdir/CFILES"; then
+	explicate_var CFILES "$makefile" >"$tmpdir/CFILES"
+fi
+
+#========== INTERMEDIATE PRODUCTS: LEXEES, YACCEES AND WEBEES
+
+# First see if there are some just in order to add the libes if these
+# were not included in Makefile.ker. We will treat them eventually at
+# the end, after setting CPPFLAGS and so on
+
+#----- LEXEES
+
+sed 's/$/ /' "$makefile" \
+  | sed -n -e '/^[^:]*:[ 	]*[^ 	]*\.l[ 	].*$/p' \
+	-e '/^[^:]*:[ 	]*[^	 ]*\.l$/p'>$tmpdir/lexees
+
+#----- YACCEES
+
+sed 's/$/ /' "$makefile" \
+  | sed -n -e '/^[^:]*:[ 	]*[^ 	]*\.y[ 	].*$/p' \
+	-e '/^[^:]*:[ 	]*[^ 	]*\.y$/p' >$tmpdir/yaccees
+
+#----- CWEBEES
+
+sed 's/$/ /' "$makefile" \
+  | sed -n -e '/^[^:]*:[ 	]*[^ 	]*\.w[ 	].*$/p' \
+	-e '/^[^:]*:[ 	]*[^ 	]*\.w$/p' >$tmpdir/cwebees
+
+#========== LINKAGE HANDLING
+# The LDFLAGS and assimilated will only be needed when linking objects
+# in an executable or alike that is a PROG or a DSH_LIB.
+# We introduce a new macro LDFLAGS_LIBES that will hold in order the
+# -l<libname> needed.
+# All paths are taken through $RKLIBDIR allowing:
+#
+#	- granularity for static linking since we can mask shared libes
+#	- efficiency : one and only one path
+#	- minimality of the command line argument
+#	- flexibility of the libraries linking since we can also symlink to
+#	one version of a lib.
+
+#
+# There are two distinct paths: the one needed on compile time to find 
+# the library against which to compile, and the path where to find it
+# at run time on the host in the case of dynamic linking.
+# -L is for now, -rpath (-R) is, if needed, for future reference.
+#
+# To allow the use of partial static linking and versioning static
+# linking, the macro USE_STATIC_LIBES shall be defined in Makefile.ker
+# and list, in order, the libes to link statically into the PROG.
+# It shall be a subset of LIBES (LIBES _shall_ be set).
+#
+# The macro MAKE_STATIC means then link statically with all the LIBES
+# including CLIB. The difference with explicitely setting
+# USE_STATIC_LIBES is that LDFLAGS_STATIC is added to the flags for the
+# link stage.
+# USE_STATIC_LIBES shall be used for partial static linking.
+# If you want to link statically except for LIBC, just set
+# USE_STATIC_LIBES = LIBES.
+#
+# DO_NOT_MAKE_STATIC has the normalized names of libraries that need
+# dynamic linking. This does _not_ mean that these libraries will be
+# used as dsh, only that they require a dynamically linked program.
+# One can statically linked everything except the CLIB because a
+# lib.a uses dlopen() etc.
+#
+# MAKE_STATIC is only for programs. Info for PROJECT developers.
+#
+# Afterwards, testing MAKE_STATIC tests too is_prog as true.
+#
+if test "x$is_prog" = x && test -s "$tmpdir/MAKE_STATIC"; then
+	rk_log "MAKE_STATIC is only for PROG!"
+	rm "$tmpdir/MAKE_STATIC"
+fi
+
+# If the developer is using a lib to trace the execution (for example
+# memory allocation), all the libraries and the programs must use the
+# same routines. Hence is introduced the GLOBALLIB variable that is
+# added last to the LIBES but _before_ added CLIB. If one wants to
+# debug CLIB, then simply add CLIB to your definition of LIBES...
+#
+if test "x$GLOBALLIB" != x; then
+	echo "$GLOBALLIB" | sed -e 's/^[ 	]*//' \
+		-e 's/[ 	]*$//' -e 's/[ 	]\{1,\}/ /g' \
+		-e 's/ /\
+/g'\
+		| sed '/^$/d' >>"$tmpdir/LIBES"
+fi
+
+if ! test -f "$tmpdir/LIBES"; then
+	: >"$tmpdir/LIBES"
+fi
+
+# Don't add CLIB and let the CC compilation front-end handle it
+# if static linking is asked for.
+#
+#grep "^$CLIB\$" "$tmpdir/LIBES" >/dev/null 2>&1\
+#	|| echo "$CLIB" >>"$tmpdir/LIBES"
+
+if test -s "$tmpdir/MAKE_STATIC" \
+	-a "$(cat "$tmpdir/MAKE_STATIC")" = YES; then
+	cp "$tmpdir/LIBES" "$tmpdir/USE_STATIC_LIBES"
+fi
+
+# Ensure existance of USE_STATIC_LIBES and convert
+# DO_NOT_USE_STATIC_LIBES.
+#
+if ! test -f "$tmpdir/USE_STATIC_LIBES"; then
+	: >"$tmpdir/USE_STATIC_LIBES"
+fi
+
+echo ${DO_NOT_USE_STATIC_LIBES:-} | sed -f "$tmpdir/pageit.sed"\
+	>"$tmpdir/DO_NOT_USE_STATIC_LIBES"
+
+# All the libes will be found here.
+# Save the previous version in X.
+#
+if ! test -s "$tmpdir/XLDFLAGS"; then
+	: >"$tmpdir/XLDFLAGS"
+fi
+XLDFLAGS="${LDFLAGS:-} $(cat "$tmpdir/XLDFLAGS")"
+LDFLAGS="-L$RKLIBDIR"
+
+LDFLAGS_LIBES=
+LDFLAGS_DSHARED="$LDFLAGS_DSHARED $(echo $LDFLAGS_ELF_RPATH_LINK | sed 's@##LIBPATH##@'$RKLIBDIR@)"
+
+# RPATHS has all the paths. It is concatenated for further uses. Not
+# set before each lib component. Same is true for rpath_link, not
+# used since we request that programmer knows what he uses.
+#
+RPATHS=
+rpath=
+
+# Adding the needed paths to headers.
+# by default add OBJPROGDIR (*.h may be created) and src.
+# Save the previous ones in X version.
+#
+XCPPFLAGS="${CPPFLAGS:-} $(cat "$tmpdir/XCPPFLAGS")"
+CPPFLAGS="-I. -I$SRCDIR"
+
+# CLIB is a special case, because some systems have a CLIB with
+# dependencies (libdl on Debian for example). So we do not compile
+# with LDFLAGS_STATIC if CLIB is only available as dshared.
+#
+if ! grep "^$CLIB\$" "$tmpdir/DO_NOT_USE_STATIC_LIBES" >/dev/null 2>&1\
+	&& test -f $RKLIBDIR/$(rk_mk_rk_aname $CLIB); then
+	missing_static_lib=NO
+else 
+	missing_static_lib=YES
+fi
+
+while read lib; do
+	if grep "^$lib\$" "$tmpdir/DO_NOT_MAKE_STATIC" >/dev/null 2>&1 \
+		|| grep "^$lib\$" "$tmpdir/DO_NOT_USE_STATIC_LIBES" >/dev/null 2>&1; then
+
+		missing_static_lib=YES # side effect: we will not statically compile
+	fi
+
+	# System artefacts.
+	#
+	if test "x$lib" != "x${lib#SYS}"\
+		&& test "x$(echo $lib | sed 's/__[0-9.]*$//')" = "x$lib"; then
+		continue
+	fi
+
+	type=
+	# The headers.
+	#
+	hinclude=$(sed -n "s@^$lib \\([^ ][^ ]*\\) [^ ]*\$@\\1@p" $OBJDIR/.rkcomp/libes.static)
+	#
+	# System headers may not have a FQP. Don't add empty dirnames.
+	#
+	if test "x$hinclude" != "x" && test "$hinclude" != "NULL" \
+		&& test "$hinclude" != "SYS"; then
+		CPPFLAGS=$(rk_add_once "$CPPFLAGS" "-I$hinclude")
+	fi
+
+	# Even the dynamic shared will be called a la static.
+	#
+	# Even a not requested static lib may exist only as static. So there
+	# must be a fallback.
+	#
+	if grep "^$lib\$" "$tmpdir/USE_STATIC_LIBES" >/dev/null 2>&1\
+		&& ! grep "^$lib\$" "$tmpdir/DO_NOT_USE_STATIC_LIBES" >/dev/null 2>&1\
+	  && test -f $RKLIBDIR/$(rk_mk_rk_aname $lib); then
+		type=static
+	elif test -f $RKLIBDIR/$(rk_mk_elf_rk_soname $lib); then
+		type=dshared
+		rpath=$(rk_get_lib_rpath $lib)
+		if test "x$rpath" != x; then
+			rpath=$(echo $LDFLAGS_ELF_RPATH | sed 's@##RPATH##@'${rpath}@)
+			RPATHS=$(rk_add_once "$RPATHS" "$rpath")
+		else
+			rk_log "Warning: No registered rpath for \`$lib'."
+			rk_log "Warning: Should be registered in $PROJECT.map directly"
+			rk_log "  or by way of rk_which_lib_of to verify presence at"
+			rk_log "  install time. Dshared executable may fail..."
+		fi
+
+		if test "x$is_prog" = "xYES"; then
+			verif_runtime "$lib"
+		fi
+
+	else # static not requested; but nothing else (LEXLIB...).
+		type=static
+	fi
+	if grep "^$lib\$" "$tmpdir/USE_STATIC_LIBES" >/dev/null 2>&1\
+		&& test "$type" = dshared; then
+		rk_log "WARNING: \`$lib' required static but only dshared version found or used."
+		missing_static_lib=YES
+	fi
+
+	# CLIB shall come last and will be statically added only if
+	# needed and every other one is static (some systems allow
+	# compilation but the program crashes because libc has to be
+	# dynamically linked for dshared libes linked).
+	# We do not add CLIB. This is the project that may add it.
+	#
+	if test "$lib" = "$CLIB" && test $missing_static_lib = YES; then
+		if test -f $RKLIBDIR/$(rk_mk_elf_rk_soname $lib); then
+			type=dshared
+		fi 
+	fi
+	
+	if test "$type" = static; then
+		LDFLAGS_LIBES="$LDFLAGS_LIBES -l$(mk_ldname $(rk_mk_rk_aname $lib))"
+	else
+		LDFLAGS_LIBES="$LDFLAGS_LIBES -l$(mk_ldname $(rk_mk_elf_rk_soname $lib))"
+	fi
+done <"$tmpdir/LIBES"
+
+
+# Only add LDFLAGS_STATIC if indeed static requested (MAKE_STATIC)
+# AND all static libes found.
+#
+if test -s "$tmpdir/MAKE_STATIC" \
+	&& test "$(cat "$tmpdir/MAKE_STATIC")" = YES\
+	&& test $missing_static_lib = NO; then
+		LDFLAGS="$LDFLAGS $LDFLAGS_STATIC"
+else
+		verif_runtime "$CLIB"
+fi
+
+# If we are generating a LIB, include its header path by default (LIB
+# is not set if PROG is).
+#
+if test "x$is_lib" = "xYES" ; then
+	hinclude=$(sed -n "s@^$(cat "$tmpdir/LIB") \\([^ ][^ ]*\\) [^ ]*\$@\\1@p" $OBJDIR/.rkcomp/libes.static)
+	if test "x$hinclude" = "x"; then
+		hinclude=$(sed -n "s@^$(cat "$tmpdir/LIB") \\([^ ][^ ]*\\) [^ ]*\$@\\1@p" $OBJDIR/.rkcomp/libes.dshared)
+	fi
+	if test "x$hinclude" != "x" && test "$hinclude" != "NULL" \
+		&& test "$hinclude" != "SYS"; then
+		CPPFLAGS=$(rk_add_once "$CPPFLAGS" "-I$hinclude")
+	fi
+fi
+
+# The user can add to CFLAGS etc. by defining a X{VAR}.
+# But the definitions must be "static": no recursive call etc. make(1)
+# is not sh(1)!
+#
+cat <<EOT >>"$makefile"
+
+CFLAGS = $CFLAGS $(cat "$tmpdir/XCFLAGS")
+CFLAGS_DSHARED = $CFLAGS_DSHARED
+LFLAGS = $LFLAGS $(cat "$tmpdir/XLFLAGS")
+YFLAGS = $YFLAGS $(cat "$tmpdir/XYFLAGS")
+ARFLAGS = $ARFLAGS $(cat "$tmpdir/XARFLAGS")
+CPPFLAGS = $XCPPFLAGS $CPPFLAGS
+LDFLAGS = $XLDFLAGS $LDFLAGS
+LDFLAGS_LIBES = $LDFLAGS_LIBES 
+LDFLAGS_DSHARED = $LDFLAGS_DSHARED
+
+EOT
+
+#========== INTERMEDIATE PRODUCTS: LEXEES, YACCEES AND WEBEES
+
+# Real generation.
+
+# If prefixing needs to be done, a supplementary target has to be
+# generated.
+#
+if test -s "$tmpdir/LEX_YACC_PREFIX"; then
+	echo RK_LEX_YACC_PREFIXER = $TOOLDIR/lib/lex_yacc_prefixer.data >>"$makefile"
+	cat - >>"$makefile" <<'EOC'
+
+rk_lex_yacc_prefixer.ed : $(RK_LEX_YACC_PREFIXER) 
+	sed 's!^\([^ ][^ ]*\)$$!g/\1/s/\\([^a-zA-Z0-9_]\\)\\(\1\\)\\([^a-zA-Z0-9_]\\)/\\1$(LEX_YACC_PREFIX)\\2\\3/g!' $(RK_LEX_YACC_PREFIXER) >$@
+	sed 's!^\([^ ][^ ]*\)$$!g/\1/s/^\\(\1\\)\\([^a-zA-Z0-9_]\\)/$(LEX_YACC_PREFIX)\\1\\2/g!' $(RK_LEX_YACC_PREFIXER) >>$@
+	sed 's!^\([^ ][^ ]*\)$$!g/\1/s/\\([^a-zA-Z0-9_]\\)\\(\1\\)$$/\\1$(LEX_YACC_PREFIX)\\2/g!' $(RK_LEX_YACC_PREFIXER) >>$@
+	echo "w" >>$@
+	echo "q" >>$@
+
+EOC
+fi
+
+#----- LEXEES
+
+if test -s $tmpdir/lexees ; then
+	while read line; do
+	  (
+	  target=$(echo $line | sed -e 's/^ *\([^:]*\):.*$/\1/')
+	  src=$(echo $line | sed -e 's/$/ /' -e 's/^[^:]*: *\([^ 	]*.l\)[ 	].*$/\1/')
+	  if test -s "$tmpdir/LEX_YACC_PREFIX"; then
+		echo "$target : rk_lex_yacc_prefixer.ed $src"
+	  else
+	    echo "$target : $src"
+	  fi
+	  echo '	$(LEX) $(LFLAGS) '$src
+	  echo '	if test "$@" != "lex.yy.c"; then mv lex.yy.c $@; fi'
+	  if test -s "$tmpdir/LEX_YACC_PREFIX"; then
+		echo '	ed $@ <rk_lex_yacc_prefixer.ed >/dev/null 2>&1'
+	  fi
+	  echo
+	  ) >>"$makefile"
+	done <"$tmpdir/lexees"
+fi
+
+#----- YACCEES
+
+if test -s "$tmpdir/yaccees" ; then
+	while read line; do
+	  (
+	  target=$(echo $line | sed -e 's/^ *\([^:]*\):.*$/\1/')
+	  src=$(echo $line | sed -e 's/$/ /' -e 's/^[^:]*: *\([^ 	]*.y\)[ 	].*$/\1/')
+	  if test -s "$tmpdir/LEX_YACC_PREFIX"; then
+		echo "$target : rk_lex_yacc_prefixer.ed $src"
+	  else
+	    echo "$target : $src"
+	  fi
+	  genc=$(echo $line | sed -e 's/^ *\([^:]*\): .*/ \1 /' | sed -n -e 's/^.*[^a-zA-Z0-9_.-]\([^ ][^ ]*\.c\)[^a-zA-Z0-9_-].*$/\1/p')
+	  genh=$(echo $line | sed -e 's/^\([^:]*\) *: .*/ \1 /' | sed -n -e 's/^.*[^a-zA-Z0-9_.-]\([^ ][^ ]*\.h\)[^a-zA-Z0-9_-].*$/\1/p')
+	  echo '	$(YACC) $(YFLAGS) '$src
+	  echo '	if test "'$genc'" != "y.tab.c"; then mv y.tab.c "'$genc'"; fi'
+	  echo '	if test "'x$genh'" != "x" && test "'$genh'" != "y.tab.h"; then mv y.tab.h "'$genh'"; fi'
+	  if test -s "$tmpdir/LEX_YACC_PREFIX"; then
+		echo '	ed '$genc' <rk_lex_yacc_prefixer.ed >/dev/null 2>&1'
+		echo '	if test "x'$genh'" != "x"; then ed "'$genh'" <rk_lex_yacc_prefixer.ed >/dev/null 2>&1; fi'
+	  fi
+	  echo
+	  ) >>"$makefile"
+	done <"$tmpdir/yaccees"
+fi
+
+#----- CWEBEES
+
+# The first dependency must be a .w and is taken as the source; the last
+# one, if suffixed ".ch", is a change file.
+# The specification must hold on one line.
+# It is possible to declare more dependencies without a generation by
+# putting as the first one a not ".w" suffixed file.
+#
+if test -s "$tmpdir/cwebees" ; then
+	i=0
+	while read line; do
+	  i=$(($i + 1))
+	  (
+	  src=$(echo $line | sed -n -e 's/^[^:]*: *\([^ 	][^ 	]*.w\)$/\1/p'\
+	  	-e 's/^[^:]*: *\([^ 	][^ 	]*.w\)[ 	].*$/\1/p')
+	  if test "x$src" = x; then continue; fi
+	  ch=$(echo $line | sed -n 's/^[^:]*:.*[ 	]\([^ 	][^ 	]*.ch\)[ 	]*$/\1/p')
+	  echo "$line"
+	  echo '	CWEBINPUTS="$(CWEBINPUTS)" $(CTANGLE) '$src $ch
+	  echo
+	  echo $line | sed -e 's/^ *[^:]*:\(.*\)$/doc'$i':\1/'
+	  echo '	CWEBINPUTS="$(CWEBINPUTS)" $(CWEAVE) '$src $ch
+	  echo
+	  ) >>"$makefile"
+	done <"$tmpdir/cwebees"
+	scratch="doc_all: "
+	while test $i -ne 0 ; do
+	  scratch="$scratch doc$i"
+	  i=$(($i - 1))
+	done
+	echo "
+$scratch" >>"$makefile"
+fi
+echo >>"$makefile"
+
+#========== GENERATING OBJECTS, PROG and LIB
+#
+# We first build the couple src, object.
+# We may be linking objects that are already created elsewhere, and we
+# need only to translate CFILES. If CFILES is defined, the object are
+# deduced from the "*.c" filenames in the CFILES (basename with o 
+# suffix).
+# If CFILES is not set, we infer from object a SRCDIR/name.c.
+#
+if test -s "$tmpdir/CFILES"; then
+	sed -e 's!^.*/\([^/]*\)\.c$!& \1.o!' \
+	-e 's!^\([^/]*\)\.c$!& \1.o!' \
+	"$tmpdir/CFILES"\
+	| sed -f "$tmpdir/sed"\
+	>"$tmpdir/cobj"
+elif test -s "$tmpdir/COBJ"; then
+	sed -e 's!^\(.*\)\.o$!\$(SRCDIR)/\1.c &!' "$tmpdir/COBJ"\
+	| sed -f "$tmpdir/sed"\
+	>"$tmpdir/cobj"
+fi
+
+if test "x$is_prog" = "xYES" ; then
+{
+	echo
+	echo '$(PROG): $(COBJ)'
+	echo '	$(CC) $(CFLAGS) $(LDFLAGS) $(LDFLAGS_DSHARED) '$RPATHS' -o $@ $(COBJ)  $(LDFLAGS_LIBES)'
+	echo
+	while read src obj; do
+	  echo "$obj: $src"
+	  echo '	$(CC) $(CPPFLAGS) $(CFLAGS) -c -o $@ '$src
+	  echo
+	done <"$tmpdir/cobj"
+} >>"$makefile"
+	cat "$tmpdir/PROG" >>"$tmpdir/PRECIOUS"
+
+elif test "x$is_data" = "xYES" ; then
+	cat "$tmpdir/DATA" >>"$tmpdir/PRECIOUS"
+
+elif test "x$is_lib" = "xYES" ; then
+{
+	# Note that the target static library will always be followed.
+	#
+	STATIC_LIB=$RKLIBDIR/$(rk_mk_rk_aname $(cat "$tmpdir/LIB"))
+	# And it is precious.
+	#
+	echo "$STATIC_LIB" >>"$tmpdir/PRECIOUS"
+
+	# Add the target names for static shared and dynamic shared even
+	# if not generated.
+	#
+	DSH_LIB=$RKLIBDIR/$(rk_mk_elf_rk_soname $(cat "$tmpdir/LIB"))
+	echo "DSH_LIB = $DSH_LIB"
+	echo
+	# And it is precious.
+	#
+	echo "$DSH_LIB" >>"$tmpdir/PRECIOUS"
+
+	# Add an indirection to avoid the rewriting of the makefile
+	# (since the normalized libname as no sense for say AR).
+	#
+	echo '$(LIB): '$STATIC_LIB
+	echo
+
+	# Static lib. Always built.
+	# add target for static objects
+	#
+	while read src obj; do
+		echo "$obj: $src"
+		echo '	$(CC) $(CPPFLAGS) $(CFLAGS) -c -o $@ '$src
+		echo
+	done <"$tmpdir/cobj"
+	echo $STATIC_LIB: '$(COBJ)'
+	echo '	$(AR) $(ARFLAGS) $@ $(COBJ)'
+	#
+	# Supplementary to global cleaning, partial during compilation
+	# SAVE_SPACE cleaning.
+	#
+	echo '	if test "x$(SAVE_SPACE)" = "xYES"; then rm -f $(COBJ); fi'
+
+	if test -s "$tmpdir/MAKE_DSHARED_LIB" \
+		-a "x$(cat "$tmpdir/MAKE_DSHARED_LIB")" = "xYES" \
+		-a "x$DSH_LIB" != "x" ; then
+	  # dshared build add as action in static target
+	  #
+	  echo '	$(MAKE) $(DSH_LIB)'
+	  echo
+	  # Create the dsh_cobj list: src dso.
+	  #
+	  sed -e 's@[ 	]\([^ 	]*\)\.o$@ \1.dso@' "$tmpdir/cobj" >"$tmpdir/dsh_cobj"
+	  # Extract just the dso for the DSH_COBJ.
+	  #
+	  sed -f "$tmpdir/pageit.sed" "$tmpdir/dsh_cobj"\
+		| sed -n '/\.dso$/p' >"$tmpdir/dsh_obj"
+	  SONAME=$(rk_mk_elf_soname $(basename $(cat "$tmpdir/LIB")))
+	  LDFLAGS_ELF_SONAME=$(echo $LDFLAGS_ELF_SONAME | sed 's/##SONAME##/'$SONAME/)
+	  printf "DSH_COBJ = "
+	  rowit "" "$tmpdir/dsh_obj" YES
+	  echo
+	  echo '$(DSH_LIB): $(DSH_COBJ)'
+	  echo '	$(AR_DSHARED) $(LDFLAGS) '$LDFLAGS_ELF_SONAME  $RPATHS' $(LDFLAGS_DSHARED) -o $@ $(DSH_COBJ) $(LDFLAGS_LIBES)'
+	  #
+	  # Supplementary to global cleaning, partial during compilation
+	  # SAVE_SPACE cleaning.
+	  #
+	  echo '	if test "x$(SAVE_SPACE)" = "xYES"; then rm -f $(DSH_COBJ); fi'
+	  echo
+
+	  # add targets for dshared objects
+	  #
+	  while read src obj; do
+	    echo "$obj: $src"
+	    echo '	$(CC) $(CPPFLAGS) $(CFLAGS) $(CFLAGS_DSHARED) -c -o $@ '$src
+	    echo
+	  done <"$tmpdir/dsh_cobj"
+	fi
+} >>"$makefile"
+fi
+
+#========== FINAL CLEAN TARGET
+#
+# Only remove PRODUCTS that are not PRECIOUS when cleaning (SAVE_SPACE
+# option for exammple).
+#
+#
+for precious in `cat "$tmpdir/PRECIOUS"`; do
+	precious=$(echo $precious | sed 's!/!\\/!g')
+	echo "/^$precious\$/d" >>"$tmpdir/precious.sed"
+done
+if test -s "$tmpdir/precious.sed"; then
+	sed -f "$tmpdir/precious.sed" "$tmpdir/prods" >"$tmpdir/safe_prods"
+else
+	cp "$tmpdir/prods" "$tmpdir/safe_prods"
+fi
+
+# There may be generated LEX and YACC well known names, remove them
+# also unconditionnally.
+#
+cat <<EOT >>"$makefile"
+
+clean:
+	rm -f *.o *.dso lex.yy.c y.tab.c y.tab.h y.output
+EOT
+
+# We suppress also *.o and *.dso in SUBDIRS.
+#
+while read subdir; do
+	echo "	rm -f $subdir/*.o $subdir/*.dso" >>"$makefile"
+done <"$tmpdir/SUBDIRS"
+
+# And add safe_prods.
+#
+rowit "	rm -f " "$tmpdir/safe_prods" NO >>"$makefile"
+
+#------------------POST PROCESSING
+
+if test "x$debug_mode" != "xYES"; then
+	clean_tmp
+fi
+
+exit 0

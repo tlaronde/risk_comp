@@ -1,0 +1,66 @@
+# The Microsoft Interix environment, for posix subsystem or windows32
+# subsystem compilation (with Visual C/C++).
+#
+# $Id: M_interix,v 1.10 2021/03/08 08:55:18 tlaronde Exp $
+#
+# Copyright 2013, 2016--2017, 2019, 2021 Thierry LARONDE <tlaronde@polynum.com>
+# Public Domain. NO GUARANTEES!
+
+
+#----- MATRIX environment dependent
+
+MATRIX=interix
+MATRIX_ARCH=${MATRIX_ARCH:-$(uname -p)}
+MATRIX_MACHINE=${MATRIX_MACHINE:-$(uname -m)}
+MATRIX_RELEASE=${MATRIX_RELEASE:-$(uname -r)}
+MATRIX_TYPE=posix
+MATRIX_SUBTYPE=GENERIC
+
+M_TOOLS_REQUIRED=
+
+# SFU is a subsystem. But we are not cross-compiling for a Windows32
+# target: the libraries will be at the very same place under the
+# POSIX subsystem. A Windows(32) matrix could be a different matter.
+#
+M_CROSS_PATH_PREFIX=${M_CROSS_PATH_PREFIX:-""}
+
+# By default, do not suppose symbolic links.
+M_FSLINK="cp"
+
+MATRIXRMDIR="rmdir"
+
+#----- There shall be a compile environment
+
+# To quote Microsoft Interix documentation:
+#
+# the Interix SDK provides the following compiler interfaces: cc ,
+# c89 , gcc , and g++ . To use cc or c89 , you must already have
+# Microsoft Visual C/C++ setup and running because cc and c89 invoke
+# the MSVC utilities CL.EXE and LINK.EXE by searching your path for
+# the programs. If you are using gcc, then Visual C++ setup is not
+# required.
+# 
+
+RK_COMPILE_ENV=${RK_COMPILE_ENV:-gcc}
+
+# posix will use VisualC++ needing path adjustment for CL.EXE and
+# LINK.EXE.
+#
+include C_$RK_COMPILE_ENV 
+
+# yacc(1) is BSD yacc not bison(1). lex is flex(1) but called lex(1).
+#
+LFLAGS="-l" # lex(1) is flex(1) but called lex.
+
+# The names are set by the TARGET, but the search is made on the
+# matrix.
+#
+CLIB=$(rk_which_lib_of $CLIB)
+MATHLIB=$(rk_which_lib_of $MATHLIB)
+YACCLIB=$(rk_which_lib_of $YACCLIB)
+LEXLIB=$(rk_which_lib_of $LEXLIB)
+LEXLIB=${LEXLIB:-$(rk_which_lib_of libfl__ NULL)}
+
+if test "x$ICONVLIB" != x; then
+	ICONVLIB=$(rk_which_lib_of $ICONVLIB)
+fi

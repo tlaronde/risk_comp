@@ -1,0 +1,93 @@
+# $Id: C_posix,v 1.28 2020/08/30 07:52:53 tlaronde Exp $
+#
+# This defines a POSIX compliant compile environment.
+#
+# Copyright 2004-2013 Thierry LARONDE <tlaronde@polynum.com>
+# Public Domain. NO GUARANTEES!
+
+# Project can test this to see what Compile env is here.
+#
+RK_COMPILE_ENV="posix"
+RK_COMPILE_SUB_ENV=${RK_COMPILE_SUB_ENV:-default}
+
+#----- These ones will be defined by config if not set. 
+
+STDC="YES"
+C_POSIX_VERSION=
+
+#----- POSIX known (or definable)
+
+MAKE=$(rk_which_cmd_of make)
+
+# $(CC) is a front-end to cpp, cc, as, ld. Hence in POSIX no definition
+# for $(CPP), $(AS) and $(LD).
+#
+CC=$(rk_which_cmd_of c99 c89 cc)
+
+# Some specific switches are defined by POSIX for debugging or
+# stripping. Since CFLAGS or CPPFLAGS are not definable by the user in 
+# the conf, choice flags are introduced RK_COMPILE_SUB_ENV.
+#
+CFLAGS=
+case $RK_COMPILE_SUB_ENV in
+	debug) CFLAGS="$CFLAGS -g"
+		;;
+	distrib) CFLAGS="$CFLAGS -DNDEBUG -s"
+		;;
+	*) RK_COMPILE_SUB_ENV=default
+		;;
+esac
+
+# At least Plan9::lex(1) doesn't recognize %array directive.
+# Traditionnal lex(1) uses char yytex[]. So if flex, we force
+# compatibility.
+#
+LEX=$(rk_which_cmd_of flex lex)
+LFLAGS=
+if test "$LEX"; then
+	if echo $LEX | grep 'flex$' >/dev/null 2>&1; then
+		LFLAGS="-l"
+	fi
+fi
+	
+YACC=$(rk_which_cmd_of yacc)
+YFLAGS=
+if test "x$YACC" = x; then
+	YACC=$(rk_which_cmd_of bison)
+	test "x$YACC" = x || YFLAGS="-y"
+fi
+LDFLAGS=
+AR=$(rk_which_cmd_of ar)
+ARFLAGS="-crv"
+
+# These ones are NOT POSIX defined but are used by the rkcomp.
+# POSIX does not defined this ABI dependent stuff. The fact that
+# a program is compiled using shared libes or not depends on the
+# system settings and POSIX does not require not to use shared libes:
+# this is undefined. 
+#
+CPPFLAGS=
+
+# a directive for cc interface needed to be sure what the things
+# we do not explicitely state are also statically linked.
+#
+LDFLAGS_STATIC=
+
+AR_DSHARED=
+CFLAGS_DSHARED=
+LDFLAGS_DSHARED=
+
+# ELF object link specific.
+# How to define the SONAME of an ELF shared lib.
+#
+LDFLAGS_ELF_SONAME=
+
+# How to set a rpath in an ELF object. (runtime search path)
+#
+LDFLAGS_ELF_RPATH=
+
+# How to specify link time dir path to search for included dshared 
+# libes. (linktime search path. Not used for now, for recording
+# information only)
+#
+LDFLAGS_ELF_RPATH_LINK=

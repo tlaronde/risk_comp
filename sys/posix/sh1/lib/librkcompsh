@@ -1,0 +1,653 @@
+# $Id: librkcompsh,v 1.71 2024/01/27 12:52:33 tlaronde Exp $
+#
+# This is the KerGIS Tools' Bourne shell functions "library".
+# It is used by `rkconfig' and `rkbuild'.
+#
+#  Copyright 2004-2014, 2016-2017, 2020, 2023
+#	Thierry LARONDE <tlaronde@polynum.com>
+#  All rights reserved. 
+#  
+#  This work is under the KerGIS Public Licence v1.0
+# 
+#  See the COPYRIGHT file at the root of the source directory or see
+#  http://www.kergis.org/licence.txt for complete information.
+# 
+# !!!THIS SOFTWARE IS PROVIDED ``AS IS'' WITHOUT ANY WARRANTIES!!! 
+#                      USE IT AT YOUR OWN RISK 
+
+# Implementation notes:
+#
+# POSIX.2 doesn't require 'local' as a builtin. Hence we don't use
+# the directive and whether use "junk" or '_' prefixed variables for
+# local use.
+
+# rk_log writes messages to stderr with a leading "$program: ".
+#
+rk_log()
+{
+	  echo "$program: $*" >&2
+}
+
+# add_once add a string only if not already present
+# add_once VARIABLE STRING_TO_ADD
+# returns new string (maybe unchanged).
+#
+rk_add_once()
+{
+	tmp=$(echo "$1" | sed -e 's/^ *//' -e 's/ *$//' -e 's/  */ /')
+	string=$(echo $2 | sed -e 's/^ *//' -e 's/ *$//' -e 's/  */ /')
+
+	# XXX the dot is special in a regex so to allow relative path we
+	# need to escape them.
+	#
+	regexp=$(echo "$string" | sed -e 's/\./\\./g' -e 's/\$/\\$/g')
+	without=$(echo "$tmp" | sed -e "s@^$regexp\$@@" -e "s@^$regexp @@" -e "s@ $regexp\$@@" -e "s@ $regexp @@")
+	if test "x$tmp" != "x$without"; then
+	  # Already here.
+	  #
+	  echo "$tmp"
+	else
+	  # Add it last.
+	  #
+	  echo "$tmp $string" | sed -e 's/^ *//' -e 's/  */ /'
+	fi
+}
+
+# Just verify that the variables are not empty. SYS* artefacts are not
+# treated specially and are not erased since rkbuild(1) can use the
+# nicknames to look for compilation options.
+#
+rk__check_required()
+{
+	info=$1
+	shift
+	crl_dep=
+	missing=
+	error=0
+	while test $# -gt 0; do
+	  crl_dep=$(eval echo \$$1)
+	  if test "x$crl_dep" != "x"; then
+		msg="defined ($crl_dep)"
+	  else
+		error=$(($error + 1))
+		msg="not defined!"
+		missing="$missing $1"
+	  fi
+	  rk_log "Checking $1: $msg"
+	  shift
+	done
+	if test $error -gt 0; then
+	  rk_log "There were $error programs/libes not found! Stop!"
+	  rk_log ""
+	  for missing_dep in $missing; do
+	    rk_log "$missing_dep is missing/not defined:"
+	    rk_log ""
+	    sed -n /^$missing_dep/,'/^$/p' $info >&2
+	    rk_log ""
+	  done
+	  exit 1
+	else
+	  rk_log "OK. I continue..."
+	fi
+}
+
+# rk_derel suppress the ./ and ../ in a path, and deref symlinks
+# derel WORKING_DIR PATH_TO_DERELATIVATE
+#
+rk_derel()
+{
+	# if not beginning by a slash, put WORKING_DIR before
+	derel_path=$(echo $2 | sed 's@^\([^/]\)@'$1'/\1@')
+
+	# normalize: squeeze multiple //...; remove '/./?'.
+	derel_path=$(echo "$derel_path" | sed -e 's@//*@/@g' -e 's@/\./@/@g' -e 's@/\.$@@')
+	if echo "$derel_path" | grep '^/*\.\./' >/dev/null 2>&1; then
+	  error invalid_path $derel_path
+	fi
+
+	while echo "$derel_path" | grep '/\.\./' >/dev/null 2>&1; do
+	  # just the first occurrence will be replaced. We work from left
+	  # to right
+	  derel_path=$(echo "$derel_path" | sed -e 's@/[^/]*[^/.]/\.\./@/@')
+	  if echo "$derel_path" | grep '^/*\.\./' >/dev/null 2>&1; then
+	    error invalid_path $derel_path
+	  fi
+	done
+	
+	# If there is a last '/..' take this into account.
+	# Here, we are guaranteed that there is no more '/../' elsewhere
+	# and that there is something before
+	derel_path=$(echo "$derel_path" | sed 's@/[^/][^/]*/\.\.$@/@')
+
+	# suppress trailing '/' if something before
+	derel_path=$(echo "$derel_path" | sed 's@\(.\)/$@\1@')
+
+	echo "$derel_path"
+}
+
+# rk_deref : dereferencing symlinks.
+# argument passed must be absolute.
+#
+rk_deref()
+{
+	pathname="$1"
+	while test -h "$pathname"; do
+	  wd=$(dirname $pathname)
+	  pathname=$(ls -l $pathname | sed 's/^.*-> *//')
+	  pathname=$(rk_derel $wd "$pathname")
+	done
+
+	echo "$pathname"
+}
+
+# rk_which_cmd_of search the first available occurrence of a space 
+# separated list of cmds first in the current PATH of the shell; if not
+# found in the RK_PATH. Using first command allows for a shell where
+# these are builtins and not pathnames.
+#
+rk_which_cmd_of()
+{
+	for cmd in $*; do
+	  _p=$(command -v $cmd || true)
+		if test "x$_p" != "x"; then
+		  echo "$_p"
+		  return
+		fi
+	  for p in `echo "$RK_PATH" | sed 'y/:/ /'`; do
+	    if test -f "$p/$cmd" && test -x "$p/$cmd"; then
+	      echo "$p/$cmd"
+		  return
+		fi
+	  done
+	done
+
+	echo ""
+}
+
+# These functions translate the lib canonical name in the  TARGET
+# static, static shared or dynamic shared (_?sh_) name.
+#
+
+rk_mk_realaname()
+{
+	echo $1 | sed $LIB_A_TR
+}
+
+# Not versioned name on target. To find or to install a symlink/copy
+# to a created lib.
+#
+rk_mk_aname()
+{
+	echo $1 | sed -e 's@__[.0-9]*$@__@' $LIB_A_TR
+}
+
+# To distinguish between dshared and static, in RKLIBDIR with put
+# a trailing "-static" before the suffix.
+#
+# These are used at compilation time on the matrix for rkbuild(1)
+# processing.
+#
+rk_mk_rk_aname()
+{
+	dname=$(dirname $1)
+	bname=$(basename $1)
+	version=$(echo "$bname" | sed 's/^.*__\([0-9.]*\)$/\1/')
+	version=$(echo "$version" | sed 's/\./-/g')
+	test "x$version" != "x" && version="-$version"
+	bname=$(echo "$bname" | sed 's/__[0-9.]*$//')
+	echo "$dname/$bname$version-static__" | sed $LIB_A_TR
+}
+
+rk_mk_elf_rk_soname()
+{
+	dname=$(dirname $1)
+	bname=$(basename $1)
+	version=$(echo "$bname" | sed 's/^.*__\([0-9.]*\)$/\1/')
+	version=$(echo "$version" | sed 's/\./-/g')
+	test "x$version" != "x" && version="-$version"
+	bname=$(echo "$bname" | sed 's/__[0-9.]*$//')
+	echo "$dname/$bname${version}__" | sed $LIB_DSH_TR
+}
+
+# The real name on the target.
+#
+rk_mk_elf_realsoname()
+{
+	echo $1 | sed $LIB_DSH_TR
+}
+
+# The soname is set at creation time. For us, a minor of 99 means a
+# development version, hence instable. Major, minor and revision are 
+# used for the soname (incompatibility between versions if more than
+# patchlevel modifications). In other cases, only the major is taken.
+#
+# This works because all 4 numbers shall be set for created libes.
+#
+rk_mk_elf_soname()
+{
+	echo $1 | sed \
+		-e 's@__\([0-9][0-9]*\.99\.[0-9][0-9]*\)\.[0-9][0-9]*$@__\1@'\
+		-e 's@__\([0-9][0-9]*\)\.[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$@__\1@'\
+		$LIB_DSH_TR
+}
+
+# rk_expl_lib(): explicate lib (instruction).
+#
+# Adding the translated lib names (discarding not installable) in the
+# map.
+# The lib name is canonical (in RISK "normal" form). This routine
+# does the translations.
+#
+# It's a map ftn so called with all fields and args i.e $# == 7.
+# args is a single field, so multiple values have to be separated
+# by default white space.
+# ck_status is global and shall be set to non 0 (rkconfig debugging)
+# and nothing echoed.
+#
+# Only used by rkconfig(1) at configuration time.
+#
+rk_expl_lib()
+{
+	if test $# -ne 7 -o "x$7" = x -o "x$dst" = 'x*'; then
+		log "Incorrect rk_expl_lib ftn call with '$*'"
+		ck_status=1
+		return
+	fi
+	 
+	action="$1"; ftype="$2"; owner="$3"; mod="$4"; src="$5"; dst="$6";
+	shift 6
+	args="$*"
+
+	for obj_type in $args; do
+		case $obj_type in
+			static) echo "$action $ftype $owner $mod $(rk_mk_rk_aname $src) $(rk_mk_realaname $dst)"
+				# create symbolic link for LDANAME if used as compile environment
+				echo "+ l $owner $mod $(rk_mk_realaname $dst) $(rk_mk_aname $dst)"
+			 ;; 
+		
+			dshared) echo "$action $ftype $owner $mod $(rk_mk_elf_rk_soname $src) $(rk_mk_elf_realsoname $dst)"
+				# create symbolic link to SONAME
+				echo "+ l $owner $mod $(rk_mk_elf_realsoname $dst) $(rk_mk_elf_soname $dst)"
+
+				# Register rpath. Some libraries may be not installed so
+				# rpath has no sense for these.
+				#
+				norm_lib=$(basename $src)
+				test "x$dst" != x\
+					&& rk_set_lib_rpath "$norm_lib" "$(dirname $dst)"
+			;; 
+		esac
+	done
+}
+	
+# rk_add_this_lib nlib_pathname header_dirname header type
+#
+# Add this specified lib (full path but normalized name), in this
+# include dir, with this header, lib of this type (only one), to the
+# compilation framework.
+# This lib is external to the project and shall be found at the same
+# place (minus the M_CROSS_PATH_PREFIX) on the target.
+#
+# If you want to use a special library, that have to be installed on
+# the target and hence has to be included in the project tarball, 
+# declare it in your project map as other created libraries (this
+# implies using rk_add_lib() in your project main conf file: rkconfig(1)
+# will deal with the rpaths (if the library already exists, add a
+# Makefile.ker and a compilation directive in the map to simply create
+# the link in the objdir directory).
+#
+# Returns the normalized name of the library or the empty string if
+# problem.
+#
+rk_add_this_lib()
+{
+	test $# -eq 4 && test "${1#/}" != "$1"\
+		&& test "${2#/}" != "$2" && test -f "${M_CROSS_PATH_PREFIX}$2"\
+		|| { echo ""; return; }
+	
+	nlib=$(basename "$1")
+	p=$(dirname "$1")
+	hinclude="${M_CROSS_PATH_PREFIX}$2"
+	header="$3"
+	type="$4"
+
+	case "$type" in
+		static) ralib=$(rk_mk_realaname $nlib)
+			alib=$(rk_mk_aname $nlib) # not versioned
+			if test -f "${M_CROSS_PATH_PREFIX}$p/$ralib"; then
+				$M_FSLINK "${M_CROSS_PATH_PREFIX}$p/$ralib" $RKLIBDIR/$(rk_mk_rk_aname $nlib)
+			elif test -f "$p/$alib"; then
+				$M_FSLINK "${M_CROSS_PATH_PREFIX}$p/$alib" $RKLIBDIR/$(rk_mk_rk_aname $nlib)
+			else
+				echo ""; return
+			fi
+			;;
+		dshared) rsolib=$(rk_mk_elf_realsoname $nlib)
+			test -f "${M_CROSS_PATH_PREFIX}$p/$rsolib" || {
+				echo ""; return
+				}
+			# Create a copy/link in RKLIBDIR.
+			#
+			$M_FSLINK "${M_CROSS_PATH_PREFIX}$p/$rsolib" $RKLIBDIR/$(rk_mk_elf_rk_soname $nlib)
+			# Set rpath map.
+			#
+			rk_set_lib_rpath $nlib "$p"
+
+			# Add to the map to be recorded for future use and presence 
+			# of TARGET lib be verified at installation time. This is
+			# reworked by rkbuild(1) to only uncomment what is really
+			# used. The prefix is "#nlib".
+			#
+			echo "#$nlib"'? f * * * '$p/$rsolib >>$OBJDIR/.rkcomp/libes.verif
+			;;
+		*) echo ""; return
+			;;
+	esac
+
+	rk_log "$nlib $type found in ${M_CROSS_PATH_PREFIX}$p"
+	rk_add_lib $nlib $hinclude $header $type
+	return # name echoed by rk_add_lib()
+}
+	
+
+# rk_which_lib_of <library> <header> [<nickname>]
+#
+# As the name implies, the routine shall be used when one doesn't
+# know where the lib and its header are or what version of the lib
+# is there. If these are known, rk_add_this_lib() have to be used in
+# its stead.
+#
+# rk_which_lib_of first call rk_which_header_of to see if a header exists
+# and if it founds one, it tries to locate a matching
+# library with an "include/" subdir changed to "lib/". If it doesn't
+# find one, it then tries the LIB_SEARCH_PATH in order.
+# a "SYS" placed as a component of the colon separated search paths
+# means to search the system paths. By default (set by the T_posix),
+# HEADER_SEARCH_PATH and LIB_SEARCH_PATH are set to the SYS.
+#
+# The library can be a compiler artefact (no real library; code added
+# by compiler). Only the header is searched and then "SYS$3" is returned
+# (will not be checked) or a nickname if the "library" needs special
+# compilation instruction (dynamic linking; ex. : ICONVLIB under
+# NetBSD-5-7 is CLIB, but only with dsh not static version. The nickname
+# is then used for DO_NOT_MAKE_STATIC.
+#
+# Generally, the current version of a dshared lib is name.so and is
+# a link to the fully qualified (versioned) name. Unfortunately, this
+# is general but not universal: there are systems where the links are
+# not made. So we will try to find the perfect match first; and if it
+# fails, we try to find a more versioned---more sub-qualified---version.
+#
+# returns :
+#	SUCCESS: rk_add_lib with the infos if found (and rk_add_lib echoes the
+# normalized version of the name); rk_set_lib_rpath and add
+#		to verif list.
+#		NOTE: this can be "SYS*" as a nickname for a system artefact.
+#	FAILURE: echoes the empty string.
+#
+# Limits: halts when something found. This may not find all the types
+# if the libraries types are spread in different directories.
+#
+# A dshared version is searched first, since it is versioned. If found
+# the usually not versioned static version is searched in the very 
+# same place.
+#
+rk_which_lib_of()
+{
+	test $# -eq 2 -o $# -eq 3 || { echo ""; return; }
+
+	header="$2"
+	# Normalized name.
+	#
+	nlib="$1"
+
+	# Static lib.
+	#
+	ralib=$(rk_mk_realaname $nlib)
+	alib=$(rk_mk_aname $nlib) # not versioned
+
+	# Dynamic shared lib.
+	#
+	rsolib=$(rk_mk_elf_realsoname $nlib)
+
+	if test "$header" != "NULL"; then
+		hinclude=$(rk_which_header_of $header)
+		test "x$hinclude" != "x" || { echo ""; return; }
+	else
+		hinclude="NULL"
+	fi
+
+	# The library may be some system magic: not a directly accessible
+	# file (ex. Plan9 under APE). So with null we set to: 
+	# "SYS[nickname]".
+	#
+	if test "$nlib" = NULL; then
+		if test $# -eq 3; then
+			test "x$(echo $3 | sed 's/__[0-9.]*$//')" = "x$3"\
+				|| { rk_log "$3 wrong nickname"; echo ""; return; }
+			echo "SYS$3" 
+		else
+			echo "SYS"
+		fi
+		return
+	fi
+
+	# Now the library. Try first to find the library nearest the header.
+	#
+	guessed=$(dirname $hinclude | sed 's@\([^/]\)$@\1/@' | sed 's@/include/@/lib/@')
+
+	# Don't take '.' into account.
+	#
+	test "$guessed" != "." || guessed=
+
+	types=
+	for p in `echo "$guessed:$LIB_SEARCH_PATH" | sed s@SYS@$SYS_LIB_PATH@ \
+	 | sed 'y/:/ /'`; do
+		if test "x$rsolib" != "x"; then
+			junk=$( { ls ${M_CROSS_PATH_PREFIX}$p/${rsolib}.* 2>/dev/null || true; }\
+				| sed "s/^.*[/]$rsolib.//" | sort -nr | sed 1q)
+			if test -f "${M_CROSS_PATH_PREFIX}$p/$rsolib"\
+				|| { test "x$junk" != "x"\
+					&& test -f "${M_CROSS_PATH_PREFIX}$p/$rsolib.$junk"\
+					&& rsolib="$rsolib.$junk"; }; then
+	    		types="dshared"
+				# Create a copy/link in RKLIBDIR.
+				#
+				$M_FSLINK "${M_CROSS_PATH_PREFIX}/$p/$rsolib" $RKLIBDIR/$(rk_mk_elf_rk_soname $nlib)
+				# Set rpath map.
+				#
+				rk_set_lib_rpath $nlib "$p"
+
+				# Add to the map to be recorded for future use and presence 
+				# of TARGET lib be verified at installation time. This is
+				# reworked by rkbuild(1) to only uncomment what is really
+				# used. The prefix is "#nlib".
+				#
+				echo "#$nlib"'? f * * * '$p/$rsolib >>$OBJDIR/.rkcomp/libes.verif
+	
+				# Look for static version at the very same place.
+		  		if test -f "${M_CROSS_PATH_PREFIX}$p/$ralib"; then
+					types="$types static"
+					$M_FSLINK ${M_CROSS_PATH_PREFIX}$p/$ralib $RKLIBDIR/$(rk_mk_rk_aname $nlib)
+				elif test -f "${M_CROSS_PATH_PREFIX}$p/$alib"; then 
+					types="$types static"
+					$M_FSLINK "${M_CROSS_PATH_PREFIX}$p/$alib" $RKLIBDIR/$(rk_mk_rk_aname $nlib)
+		  		fi
+				rk_log "$nlib $types found in ${M_CROSS_PATH_PREFIX}$p"
+				rk_add_lib $nlib $hinclude $header $types
+		 		return # name echoed by rk_add_lib()
+			fi
+		fi
+	done
+
+	# No dshared found. Trying the static versions.
+	#
+	for p in `echo "$guessed:$LIB_SEARCH_PATH" | sed s@SYS@$SYS_LIB_PATH@ \
+	 | sed 'y/:/ /'`; do
+	  if test -f "${M_CROSS_PATH_PREFIX}$p/$ralib"; then
+			types=static
+			$M_FSLINK "${M_CROSS_PATH_PREFIX}$p/$ralib" $RKLIBDIR/$(rk_mk_rk_aname $nlib)
+			rk_log "$nlib $types found in ${M_CROSS_PATH_PREFIX}$p"
+			rk_add_lib $nlib $hinclude $header $types
+	 		return # name echoed by rk_add_lib() 
+		elif test -f "${M_CROSS_PATH_PREFIX}$p/$alib"; then 
+			types=static
+			# Downgrading the version...
+			#
+			nlib=$(echo "$nlib" | sed 's@__[0-9.]*$@__@')
+			$M_FSLINK "${M_CROSS_PATH_PREFIX}$p/$alib" $RKLIBDIR/$(rk_mk_rk_aname $nlib)
+			rk_log "$nlib $types found in ${M_CROSS_PATH_PREFIX}$p"
+			rk_add_lib $nlib $include $header $types
+	 		return # name echoed by rk_add_lib() 
+	  fi
+	done
+
+	# not found
+	echo ""
+}
+
+# rk_which_header_of header: returns the dirname where header was
+# found.
+#
+rk_which_header_of()
+{
+	header=$1
+
+	# Expand the search paths.
+	# The headers are special in this sense that they do not mandatory
+	# represent real files: they may be $CC artefacts. So no need to
+	# define a SYS_HEADER_PATH, no -I will suffice. And we test via
+	# pre preprocessor that is $CC -E. But since a header may include
+	# other headers that are not in the path, we also test if the file
+	# simply exists.
+	#
+	for p in `echo "$HEADER_SEARCH_PATH" | sed 'y/:/ /'`; do
+	  if test $p = "SYS"; then
+		p=
+	    flags=
+		echo "#include <$header>" > $tmpdir/$$.h
+	  	if $CC -E $flags $tmpdir/$$.h >/dev/null 2>&1; then 
+			echo "SYS"
+			return
+		fi
+	  elif test -f "$M_CROSS_PATH_PREFIX$p/$header"; then 
+		echo "$M_CROSS_PATH_PREFIX$p"
+		return 
+	  fi
+	done
+
+	echo ""
+}
+
+# rk_add_lib NORMALIZED_NAME_OF_LIB HEADER_DIRNAME HEADER TYPES
+# returns nothing but echoes the normalized name.
+#
+rk_add_lib()
+{
+	kal_lib="$1"
+	kal_include="$2"
+	kal_header="$3"
+	shift; shift; shift
+	for type in "$@"; do
+	  if test ! -s $OBJDIR/.rkcomp/libes.$type || ! grep "^$kal_lib" $OBJDIR/.rkcomp/libes.$type >/dev/null 2>&1; then
+	    echo "$kal_lib" "$kal_include" "$kal_header" >>$OBJDIR/.rkcomp/libes.$type
+	  fi
+	done
+	echo "$kal_lib"
+}
+
+# rk_set_lib_rpath NORMALIZED_NAME_OF_LIB  RPATH_ON_TARGET
+# 	adds the rpath of the lib in .rkcomp/libes.rpath (map MATRIX present 
+#	lib to TARGET present one).
+#
+# This is also used by rkconfig(1) finding the rpath name from the
+# map.
+#
+rk_set_lib_rpath()
+{
+	echo "$1 $2" >>$OBJDIR/.rkcomp/libes.rpath
+}
+
+# rk_get_lib_rpath NORMALIZED_PATHNAME_OF_LIB.
+# 	returns rpath.
+#
+# It simply echoes the rpath registered in libes.rpath, if it exists.
+# libes.rpath is filled with records:
+#
+#		norm_name rpath
+#
+# for all the dshared libes, including the created ones (rpath deduced
+# by rkconfig from PROJECT.map).
+#
+rk_get_lib_rpath()
+{
+  sed -n "s;^$1 \([^ ][^ ]*\) *$;\1;p" $OBJDIR/.rkcomp/libes.rpath\
+		|sed 1q
+}
+
+## THESE ONES CAN BE USED LAST IN A CONFIG TO DEFINE CERTAIN FEATURES
+## (LAST BECAUSE NEEDING AT LEAST CC AND MAPPING OF LIBRES)
+
+# rk_has_struct lib header struct_name
+#
+rk_has_struct()
+{
+	junk=$(sed -n "s@^$1 \\([^ ][^ ]*\\) [^ ]*\$@\\1@p" $OBJDIR/.rkcomp/libes.static)
+	if test "x$junk" = "x"; then
+		junk=$(sed -n "s@^$1 \\([^ ][^ ]*\\) [^ ]*\$@\\1@p" $OBJDIR/.rkcomp/libes.dshared)
+	fi
+	if test "x$junk" != "x" && test "$junk" != "NULL" \
+		&& test "$junk" != "SYS"; then
+		_CPPFLAGS="$CPPFLAGS -I$(dirname $junk)"
+	else
+		_CPPFLAGS="$CPPFLAGS"
+	fi
+	
+	cat <<EOT >$tmpdir/$$.c
+#include <stdio.h>
+#include <$2>
+int
+main(int argc, char *argv[])
+{
+	struct $3 this;
+	(void)fprintf(stderr, "%p\n", &this);
+	return 0;
+}
+EOT
+	$CC $_CPPFLAGS -o "$tmpdir/$$.o" "$tmpdir/$$.c"
+	_status=$?
+	rm -f "$tmpdir/$$.c" "$tmpdir/$$.o"
+	return $_status
+}
+
+# rk_struct_has_member lib header struct_name member_name
+#
+rk_struct_has_member()
+{
+	junk=$(sed -n "s@^$1 \\([^ ][^ ]*\\) [^ ]*\$@\\1@p" $OBJDIR/.rkcomp/libes.static)
+	if test "x$junk" = "x"; then
+		junk=$(sed -n "s@^$1 \\([^ ][^ ]*\\) [^ ]*\$@\\1@p" $OBJDIR/.rkcomp/libes.dshared)
+	fi
+	if test "x$junk" != "x" && test $junk != "NULL" \
+		&& test "$junk" != "SYS"; then
+		_CPPFLAGS="$CPPFLAGS -I$(dirname $junk)"
+	else
+		_CPPFLAGS="$CPPFLAGS"
+	fi
+	
+	cat <<EOT >$tmpdir/$$.c
+#include <stdio.h>
+#include <$2>
+int
+main(int argc, char *argv[])
+{
+	struct $3 this;
+	(void)fprintf(stderr, "%p\n", &this.$4);
+	return 0;
+}
+EOT
+	$CC $_CPPFLAGS -o "$tmpdir/$$.o" "$tmpdir/$$.c"
+	_status=$?
+	rm -f "$tmpdir/$$.c" "$tmpdir/$$.o"
+	return $_status
+}

@@ -1,0 +1,92 @@
+# $Id: interix.cmds,v 1.4 2017/03/23 10:56:19 tlaronde Exp $
+#
+# Copyright 2013, 2017 Thierry LARONDE <tlaronde@polynum.com>
+# Public Domain
+
+# include library
+. install_bin/libsh
+
+# By default, do not suppose symbolic links.
+#
+T_FSLINK="cp"
+
+# rk_su_cmd <cmd>
+# subsitute as USER0 to execute the given command. USER0 can perfectly
+# be an unprivileged user, or the current user.
+#
+#
+rk_su_cmd()
+{
+	if test $(id -nu) = $USER0; then
+		$1
+	else
+		log "Switching to $USER0"
+		su $USER0 -c "$1"
+	fi
+}
+
+# rk_user_exists <user_name>
+# test for existence of user 
+
+rk_user_exists ()
+{
+	grep -q "^$1:" /etc/passwd
+	return $?
+}
+
+# rk_group_exists <group_name>
+# test for existence of group
+
+rk_group_exists ()
+{
+	grep -q "^$1:" /etc/group
+	return $?
+}
+
+# rk_group_add <group_name>
+# add the group named <group_name> to existing groups
+rk_group_add ()
+{
+ 	log "I need to add the group: $1"
+	log "Please enter the command."
+	read _cmd
+	eval $_cmd
+	return $?
+}
+
+# rk_user_add user=<username> [group=<group>] [home=<DEFAULT|PATH>] 
+# 	[groups=<second_group>[,<third_group>...]
+# add user <username> with primary group <group> etc
+rk_user_add ()
+{	
+	user=
+	group=
+	home=
+	groups=
+	while [ $# -ne 0 ]; do
+	  eval $1
+	  shift
+	done
+ 	log "I need to add the user: $user with group: ${group:-<unspecified>}"
+	log "	home: ${home:-<unspecified>} groups: ${groups:-<unspecified>}"
+	log "Please enter the command."
+	read _cmd
+	eval $_cmd
+	return $?
+}
+
+# rk_passwd <username>
+# change or set password for user <username>
+rk_passwd ()
+{
+	if [ $# -eq 0 -o "x$1" = "x" ]; then
+	  log "Trying to change password for unspecified user (root!).  NO!"
+	  return 1
+	fi
+	log "I need to change/create password for user: $_user"
+	log "Please enter the command:"
+	read _cmd
+	eval $_cmd
+
+	return $?
+}

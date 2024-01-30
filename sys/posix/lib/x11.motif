@@ -1,0 +1,24 @@
+# Motif for X11
+# $Id: x11.motif,v 1.1 2020/11/05 14:11:07 tlaronde Exp $
+#
+# Copyright 2020
+#	Thierry LARONDE <tlaronde@polynum.com>
+# Public Domain. NO GUARANTEES!
+
+XMLIB="$(rk_which_lib_of libXm__ Xm/Xm.h)"
+
+# Motif in 2019 requires jpeg, png, uuid, Xft, fontconfig, Xrender.
+# In order of dependencies.
+#
+XMULIB="$(rk_which_lib_of libXmu__ X11/Xmu/Xmu.h)"
+XTLIB="$(rk_which_lib_of libXt__ X11/Intrinsic.h)"
+ICELIB="$(rk_which_lib_of libICE__ X11/ICE/ICE.h)"
+SMLIB="$(rk_which_lib_of libSM__ X11/SM/SMlib.h)"
+ZLIB="$(rk_which_lib_of libz__ zlib.h)"
+BZ2LIB="$(rk_which_lib_of libbz2__ bzlib.h)"
+JPEGLIB="$(rk_which_lib_of libjpeg__ jpeglib.h)"
+PNGLIB="$(rk_which_lib_of libpng16__ png.h)"
+UUIDLIB="$(rk_which_lib_of libuuid__ uuid/uuid.h)"
+XFTLIB="$(rk_which_lib_of libXft__ Xft/Xft.h)"
+FONTCONFIGLIB="$(rk_which_lib_of libfontconfig__ fontconfig/fontconfig.h)"
+XRENDERLIB="$(rk_which_lib_of libXrender__ extensions/Xrender.h)"

@@ -1,0 +1,11 @@
+# These are variables set by a 2D interface dedicated conf
+# $Id: dumb2D,v 1.3 2016/02/18 09:30:39 tlaronde Exp $
+#
+# Copyright 2016 Thierry LARONDE <tlaronde@polynum.com>
+# Public Domain. NO GUARANTEES!
+#
+# TARGET_2D_TYPE is the basename of this file.
+# These other variables are set.
+
+TARGET_2D_LIBES=
+

@@ -1,0 +1,354 @@
+#!/bin/sh
+# rkpkg: a KerGIS tools script to create the archive package holding
+# the result
+#
+version="$Id: rkpkg,v 1.56 2022/05/06 13:24:49 tlaronde Exp $
+Written by Thierry Laronde.
+
+Copyright (c) 2004--2013, 2016--2017, 2020--2021
+	Thierry Laronde <tlaronde@polynum.org>
+
+All rights reserved. KerGIS Public Licence v1.0.
+
+!!!THIS SOFTWARE IS PROVIDED ``AS IS'' WITHOUT ANY WARRANTIES!!! 
+                      USE IT AT YOUR OWN RISK 
+"
+
+# When packaging, there is no perms problems since the permissions are
+# set to allow writing of directories and files. The handling of
+# permissions is the problem of rkinstall(1).
+#
+
+#========== DEFINITIONS (set and define; neither loads nor stores)
+
+TMPDIR="${TMPDIR:-/tmp}"
+
+#---------- Nothing to change below! ----------
+#
+program=rkpkg
+
+usage="
+	$program [-d] [-h] [-V] [-l] [-s] [-u]
+Package the files as showed in a PROJECT.map.
+This program must be run from the top OBJDIR.
+
+Options:
+ -l	do a Local install
+ -s	Save space: move obj files in archive, don't copy
+ -u	use Update map
+ -d	set Debug on
+ -h	display this Help and exit
+ -V	display Version information and exit
+"
+
+#----- Subfunctions
+#
+
+# We refuse to go if we are invoked as root. Period.
+#
+stop_if_root()
+{
+	if test "x$(uname)" = "xPlan9"; then
+		return 0
+  	fi
+	euid=$(id -u)
+	if test $euid -eq 0\
+		|| { test "x$(uname)" = xInterix && test $euid -eq 197108; }; then
+		echo "You are not allowed to run this as root!" >&2;
+		echo "Since you have the means to be root, you have the means not to be!" >&2;
+		echo "Create a directory writable by a normal user and config as this very user." >&2;
+		exit 1;
+	fi
+
+	return 0
+}
+
+# Be sure to do safer things, despite all other safeties: shall be
+# relatively safe even if a blunder unlocks a safety in the safety
+# chain elsewhere.
+# So, tmpdir must be set, not root, exist and be used as a token 
+# (tmpdir set to '/ tmp'---a blank--- substituted outside quotes would 
+# have "interesting" effects when rm -fr...); we first cd to it (token) 
+# before removing files. Finally, we rmdir the dir itself.
+#
+clean_tmp()
+{
+	if test "x$tmpdir" = "x" || test "$tmpdir" = '/' || ! test -d "$tmpdir"; then
+		return
+	fi
+	( cd "$tmpdir"; rm -f *; )
+	${MATRIXRMDIR:-rmdir} "$tmpdir"
+}
+
+# log simply writes messages to stderr, with a leading "$program: ".
+#
+log()
+{
+	echo "$program: " $* >&2
+}
+
+error ()
+{
+	case $1 in
+	  cannot_mkdir) log "I can't even make the dir! Uh?!";;
+	  not_in_objdir) log "I must be run from OBJDIR!";;
+	  not_configured) log "The pkg tarball does not exist!";;
+	  wrong_map) log "The map has incorrect entries!";
+		log "Programmer fault: Should have been intercepted by rkconfig(1)!";;
+	  wrong_map_order) log "Some intermediary directories are not specified!";;
+	  option) log "This option is unknown!";
+		log USAGE "$usage";;
+	esac
+
+	clean_tmp
+	exit 4
+}
+
+# If directory is a 'root' one, emit verification of upper level dir on
+# TARGET. Allow pure root dir.
+#
+emit_verify_root()
+{
+	root=$(echo $1 | sed 's!/[^/][^/]*/*$!!')
+	if test "x$root" = x; then
+		root="/"
+	fi
+	if ! grep "^$src\$" .rkcomp/installed.list >/dev/null 2>&1; then
+		echo "? d * * * $root" >>.rkcomp/installed.list
+		log "Installation will place files under '$root'"
+	fi
+}
+
+#========== CHECKS (set env; maybe loads but no stores)
+#
+set -eu # can be run as sh(1) argument; so not in shebang.
+
+stop_if_root
+
+if test $(echo $TMPDIR | sed 1q | sed 'y/ 	/__/') != "$TMPDIR"; then
+	echo "TMPDIR shall not have blanks!" >&2
+	exit 2
+fi
+tmpdir=$TMPDIR/$$
+readonly tmpdir
+if test -d $tmpdir; then
+	echo "$program: $tmpdir already exists!" >&2
+	exit 2
+fi
+
+
+#========== PROCESSING (stores)
+
+mkdir "$tmpdir" || { echo "$program: unable to make $tmpdir!" >&2; exit 3;
+}
+
+# remove temporary files on HUP, INT, QUIT, PIPE, TERM
+trap " log 'Unexpected event. Try -d to debug'; clean_tmp; exit 127;"  HUP INT QUIT PIPE TERM
+
+debug_mode=NO
+local_install=NO
+save_space=NO
+
+while test $# -gt 0 ; do
+	case "$1" in
+	  -l) local_install=YES;;
+	  -s) save_space=YES;;
+	  -u) map=.rkcomp/update;;
+	  -d) set -x; debug_mode=YES;;
+	  -h|--help) echo "$usage"; exit 0;;
+	  -V|--version) echo "$version"; exit 0;;
+	  *) error option ;;
+	esac
+shift	
+done
+
+if ! test -f ".rkcomp/rkpkg.cf"; then
+	error not_in_objdir
+fi
+. .rkcomp/rkpkg.cf
+
+map=$tmpdir/map
+# Identify OBJDIR sources that may be moved if save_space: movable.
+# Segregate between installed on TARGET (installed) and used by
+# installation (install_data).
+# The data is put in the 2 chroot'ed (so may be said) installed/ and
+# install_data/. The metadata for each is put in the <name>.list
+# metadata files, all under .rkcomp/ directory.
+#
+for list in missing installed install_data; do
+	rm -f .rkcomp/${list}.list
+	: >.rkcomp/${list}.list
+done
+
+# Adding the verified dshared libes list set by rkbuild(1).
+#
+cat .rkcomp/map >$map
+sed -n 's/^[^#][^?]*//p' .rkcomp/libes.verif >>$map
+
+# For save_space, we need to discriminate between produced files and
+# not produced files: we shall not move (i.e. suppress) a file that is
+# not a product...
+#
+regexp=$(echo $OBJDIR | sed -e 's!//*$!!' -e 's!/!\\/!g' -e 's/\./\\./g')
+# Map syntax dependent. cut(1) is not here on Plan9.
+# srcfield=5
+#cut -d ' ' -f $srcfield $map
+#
+sed 's/^[^ ][^ ]* [^ ][^ ]* [^ ][^ ]* [^ ][^ ]* \([^ ][^ ]*\) .*$/\1/' $map\
+	| sed -n -e "/^$regexp\\/.rkcomp/d" -e "/^$regexp/p"\
+	>.rkcomp/movable.list
+
+# The map shall be in topological order: root directories and
+# directories first.
+# 
+# The packaging does only split between TARGET installed and
+# installation data and register the data under the resp. subdirs. The
+# metadata is put in the <name>.list file with additional information
+# about missing files. Only the data is kept: a 'l' is only a copy,
+# there is no data but simply a metadata directive that will be used
+# by rkinstall(1).
+#
+# Checks have been made by rkconfig(1) so we only do what we are 
+# supposed to do a "*)" final case being added simply to catch during
+# development process a programmer fault (mismatch between rkconfig(1)
+# preprocessing and this script).
+#
+# The topological order is verified by this script.
+#
+# The real permissions will be handled by rkinstall. Here we set
+# permissions so that we can write or overwrite our package.
+#
+directly_under_root=NO
+while read action ftype owner mod src dst junk; do
+	if test "x$junk" != x; then
+		error wrong_map
+	fi
+
+	case "$action" in
+		'@') continue;; # compilation instruction; not installed.
+		'+' | '!' | ':') rootto=installed;;
+		'?') echo "$action $ftype $owner $mod $src $dst" >>.rkcomp/installed.list
+			if test "$ftype" = 'D'; then
+				log "Installation will place files under '$dst'"
+				mkdir -p .rkcomp/installed/"$dst"
+				chmod 755 .rkcomp/installed/"$dst"
+			fi
+			continue;;
+		'.') rootto=install_data;;
+		'*') continue;; # no_op is no_op
+	  	*) error wrong_map;; # should not be there 
+	esac
+	to=".rkcomp/$rootto$dst"
+	case "$src" in
+	  	'*') case $ftype in
+			f) if ! test -d $(dirname "$to"); then
+					log "Intermediate directories not specified: '$to'"
+					error wrong_map_order
+				fi
+		  	: >"$to"; chmod 644 "$to"
+			if test $rootto = "installed" && test $(dirname %dst) = '/'; then
+				directly_under_root=YES
+			fi;;
+			D) mkdir -p "$to";
+				chmod 755 "$to"
+				if test "\\$action" != '\.'; then
+					emit_verify_root "$dst" # will verify before
+				fi;;
+			d)	# We can package in several passes. Directories may
+				# already exist...
+				#
+				if ! test -d "$to"; then
+					mkdir "$to" || {
+					log "Intermediate directories not specified: '$to'";
+					error wrong_map_order;
+					}
+				fi
+				chmod 755 "$to";;
+			*) error wrong_map;; # link shall have src.
+	  	esac;;
+	  *) # shall exist
+	    case $ftype in
+		# Symbolic links are special since they refer to an existing
+		# file in the target. They are evaluated at install time and
+		# there are metadata, not, by themselves, data.
+		#
+		l) ;;
+	    f) # We protect against moving directories too...
+			if test ! -f "$src" ; then
+				# In case of SAVE_SPACE "$src" may have been moved to
+				# "$to" previously...
+				#
+				if ! test -f "$to" && ! grep "$src" .rkcomp/missing.list >/dev/null 2>&1; then
+		       		log "$src doesn't exist..."; 
+			    	echo "$src" >>.rkcomp/missing.list;
+			   fi
+			   continue
+			fi
+
+		    if ! test -d $(dirname "$to"); then
+				log "Intermediate directories not specified: '$to'"
+				error wrong_map_order
+			fi
+
+	        # If file is a compiled one, move or copy depending on
+			# save_space. If not a compiled one (source), copy.
+			#
+	        if ! grep "^$src\$" .rkcomp/movable.list >/dev/null 2>&1\
+				|| test $save_space != "YES" ; then
+	          cp  "$src" "$to"
+	        else
+			  mv "$src" "$to"
+	        fi;
+		    chmod 644 "$to";;
+	     esac;;
+	  esac
+
+	  # If pkg is done in several distinct passes, what is now present
+	  # may have been missing previously.
+	  #
+	  if test "$src" != "*"  && grep "$src" .rkcomp/missing.list >/dev/null 2>&1; then
+	    regexp=$(echo "$src" | sed -e 's!/!\\/!g' -e 's/\./\\./g')
+		sed '/'"$regexp"'/d' .rkcomp/missing.list >$tmpdir/junk
+		mv $tmpdir/junk .rkcomp/missing.list
+	  fi
+	  echo "$action $ftype $owner $mod $src $dst" >>.rkcomp/${rootto}.list
+	  if test $directly_under_root != NO; then
+		echo "? D * * * /" >>.rkcomp/${rootto}.list # shall be "installed.list"
+	  fi
+done <$map
+
+if test $local_install != YES; then
+	# Add new stuf and then suppress in local.
+	#
+	if test -s "$PKGNAME.tar" ; then
+		tar_action=r
+	else
+		tar_action=c
+	fi
+  (
+	cd .rkcomp
+	tar -${tar_action}vf ../"$PKGNAME.tar" rkinstall\
+		missing.list movable.list\
+		install_bin install_data install_data.list\
+		installed installed.list
+	rm -fr kept/* installed/* preserved/*
+  )
+else
+  (
+	cd .rkcomp
+	# MATRIX == TARGET, get TARGET cmds.
+	#
+	. install_bin/cmds
+	if test $debug_mode = YES; then 
+		rk_su_cmd "./rkinstall -d"
+	else
+		rk_su_cmd ./rkinstall
+	fi
+  )
+fi
+
+#------------------POST PROCESSING
+
+clean_tmp
+
+exit 0

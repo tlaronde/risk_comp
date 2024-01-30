@@ -1,0 +1,68 @@
+/* FRENCH version follows */
+
+The R.I.S.K. framework (Reduced Instruction Set toolKit) is a brand new 
+set of tools originally developped for the KerGIS project by Thierry
+Laronde <tlaronde@polynum.com>. This part is only one of the subset: the
+compilation one.
+
+With these tools is distributed a copy of Donald E. Knuth and Silvio
+Levy' cweb system of structured documentation. The sources (only a
+subset) are under ./src/. Please refer to them for the exact copyrights
+and licence informations.
+
+CWEB is not used in itself by the risk_comp tools, but it may be
+used (and I [TL] do encourage its use since it's simply a beautiful
+development tool) to preprocess .w files to obtain others, mainly
+.c and perhaps .h too.  I thought it was simpler to add the programs
+needed by the compilation process than to try whether to enforce
+people to install a pre-packaged version (which will almost
+immediately try to download teTeX and so forth) or to create switches
+in the ktools to verify if the *.w files were already preprocessed
+(since cweb files exist in the sources of KerGIS, introduced by
+myself). Furthermore, it can be desirable at compilation time to
+patch the cweb sources (for example if you have distinguished
+sections with messages to the user, you can customize to your locale
+without dealing with... you know what I mean).
+
+The R.I.S.K. comp tools by themselves are under the KerGIS Public
+Licence version 1.0, that can be found in the KerGIS public tarball, or
+on the KerGIS web site: http://www.kergis.com/.
+
+------
+/* Version française */
+
+Les utilitaires de compilation R.I.S.K. comp sont un ensemble de
+programmes d'aide au développement et à la compilation originellement
+développés par Thierry Laronde <tlaronde@polynum.com> pour le projet
+KerGIS.
+
+Avec ces utilitaires est distribuée une copie du système de
+documentation structurée (une instance de la programmation lettrée)
+dû à Donald E. Knuth et Silvio Levy. Les sources (en fait un
+sous-ensemble) sont placées sous ./src/.  Veuillez vous y référer
+pour de plus amples informations sur la documentation, les droits
+de propriété intellectuelle et la licence.
+
+CWEB n'est pas, en lui-même utilisé par les ktools, mais il peut être
+utilisé (et [TL] j'encourage vivement à le faire car c'est tout 
+simplement un magnifique outil de développement) pour pré-traiter des
+fichiers .w afin d'obtenir les sources *.c, voire des *.h.
+Il m'a paru plus simple de distribuer une copie que de, soit exiger à
+l'installation des utilitaires l'installation d'une version ``packagée'' de 
+cweb qui produirait immanquablement une dépendance sur une distribution
+de TeX,
+soit de prévoir une sélection
+à la génération des Makefiles en fonction de la distribution ou non
+d'une version déjà pré-traitée des fichiers *.w (qui existent, par mon
+fait, dans les sources de KerGIS). D'autant qu'on doit pouvoir à la
+compilation décider de patcher certains fichiers cweb (par exemple si
+dans le source cweb ont été distinguées des sections avec les messages à
+destination des utilisateurs ; il est alors possible de les patcher avec
+les messages conformes à une localisation désirée ; ce qui permet qui
+plus est de ne pas se coltiner... enfin ! vous voyez ce que je veux
+dire).
+
+Les utilitaires R.I.S.K. comp sont par eux-mêmes sous la
+Licence Publique de KerGIS en version 1.0. Cette licence peut être
+trouvée par exemple à la racine des sources de KerGIS, ou sur le site de
+KerGIS : http://www.kergis.com/.

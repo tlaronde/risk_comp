@@ -1,0 +1,11 @@
+# Itanium.
+#
+ENDIANNESS=1234
+WORD=octa
+BYTE=char
+WYDE=
+TETRA=
+OCTA=
+INT=
+LONG=
+POINTER=
