@@ -16,9 +16,3 @@ programs:
 
 http://www-cs-faculty.stanford.edu/~knuth/cweb.html
 
-or for the more recent updates, for ANSI C:
-
-https://github.com/ascherer/cweb/
-
-(These versions were generated from the 4.9 Andreas Scherer maintained
-sources.)
