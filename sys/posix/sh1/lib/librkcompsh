@@ -651,3 +651,40 @@ EOT
 	rm -f "$tmpdir/$$.c" "$tmpdir/$$.o"
 	return $_status
 }
+
+# rk_has_function lib header function_name return_value parameters
+#
+# parameters is a single argument of comma separated types (without
+# names).
+#
+# returns the status of the compilation.
+#
+rk_has_function()
+{
+	junk=$(sed -n "s@^$1 \\([^ ][^ ]*\\) [^ ]*\$@\\1@p" $OBJDIR/.rkcomp/libes.static)
+	if test "x$junk" = "x"; then
+		junk=$(sed -n "s@^$1 \\([^ ][^ ]*\\) [^ ]*\$@\\1@p" $OBJDIR/.rkcomp/libes.dshared)
+	fi
+	if test "x$junk" != "x" && test "$junk" != "NULL" \
+		&& test "$junk" != "SYS"; then
+		_CPPFLAGS="$CPPFLAGS -I$(dirname $junk)"
+	else
+		_CPPFLAGS="$CPPFLAGS"
+	fi
+	
+	cat <<EOT >$tmpdir/$$.c
+#include <stdio.h>
+#include <$2>
+static $4 (*junk_) ($5);
+int
+main(int argc, char *argv[])
+{
+	junk_ = $3;
+	return 0;
+}
+EOT
+	$CC $_CPPFLAGS -o "$tmpdir/$$.o" "$tmpdir/$$.c"
+	_status=$?
+	rm -f "$tmpdir/$$.c" "$tmpdir/$$.o"
+	return $_status
+}
