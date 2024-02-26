@@ -1005,6 +1005,13 @@ if test -s "$tmpdir/CFILES"; then
 	"$tmpdir/CFILES"\
 	| sed -f "$tmpdir/sed"\
 	>"$tmpdir/cobj"
+	sed 's/[ 	]\{1,\}/\
+/g' "$tmpdir/cobj"\
+		| sed -n '/\.o$/p' >"$tmpdir/cobj_only"
+	{
+	printf "COBJ = "
+	rowit "" "$tmpdir/cobj_only" YES
+	} >>"$makefile"
 elif test -s "$tmpdir/COBJ"; then
 	sed -e 's!^\(.*\)\.o$!\$(SRCDIR)/\1.c &!' "$tmpdir/COBJ"\
 	| sed -f "$tmpdir/sed"\
