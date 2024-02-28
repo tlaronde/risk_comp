@@ -1,0 +1,101 @@
+#!/bin/sh
+# Very simplistic code to process meson.build file.
+version=0.1
+copyright="Copyright 2024
+	Thierry LARONDE <tlaronde@kergis.com>
+	All rights reserved. 
+  
+This work is under the RISK Licence.
+See the COPYRIGHT file at the root of the source directory.
+
+!!!THIS SOFTWARE IS PROVIDED ``AS IS'' WITHOUT ANY WARRANTIES!!! 
+                      USE IT AT YOUR OWN RISK 
+"
+
+#========== ENV
+#
+TMPDIR="${TMPDIR:-/tmp}"
+
+#================== NOTHING TO CHANGE BELOW! =====================
+#
+program=rkmeson
+
+usage="
+	$program [-h] [-V] meson_build_file
+Converts a meson build file to sh(1) variables definition (only
+project for now) sent to stdout.
+
+Options:
+ -h	display the Help
+ -V	display Version of the program
+"
+
+#========== SUBR
+
+#========== CHECKS (no writes)
+#
+set -eu # can be run as sh(1) argument; so not in the shebang.
+
+fbuild=
+while test $# -gt 0; do
+	case "$1" in
+		-h) echo "$usage"; exit 0;;
+		-V) echo "$version"; echo "$copyright"; exit 0;;
+		*) test -f "$1" || {
+			echo "Meson file '$1' doesn't exist" >&2
+			exit 2
+			}
+		grep '^project(' "$1" >/dev/null 2>&1 || {
+			echo "'$1' doesn't seem to be a meson.build file" >&2
+			exit 2
+			}
+			fbuild="$1"
+			;;
+	esac
+
+	shift
+done
+
+test "$fbuild" || {
+	echo "$usage" >&2
+	exit 1
+	}
+
+#========== PROCESSING (stores)
+
+# For now, just the project.
+# We are discarding not quoted blanks here.
+#
+cat <<"EOT" >$TMPDIR/$$.project.sed
+/^project(/ {
+:again
+	/) *$/b done
+	N
+	b again
+:done
+	s!\n!!g
+	s/[ 	]*\([(),:]\)[ 	]*/\1/g
+	s/^project(//
+	s/,*)$//
+	p
+	q
+}
+EOT
+
+project="$(sed -n -f "$TMPDIR/$$.project.sed" "$fbuild")"
+echo "RK_MESON_project_name=$(echo $project | cut -d ',' -f1)"
+echo "RK_MESON_language=$(echo $project | cut -d ',' -f2)"
+i=3
+while test "$(echo $project | cut -d ',' -f$i)"; do
+	junk="$(echo $project | cut -d ',' -f$i)"
+	name="$(echo $junk | sed 's/^\([^:]*\):.*$/\1/')"
+	value="$(echo $junk | sed 's/^[^:]*:\(.*\)$/\1/')"
+	echo "RK_MESON_$name=$value"
+	i=$(($i + 1))
+done
+
+#========== POST-PROCESSING
+rm -f $TMPDIR/$$.*
+
+exit 0
+
