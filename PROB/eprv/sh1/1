@@ -1,0 +1,30 @@
+#!/bin/sh -e
+# eprv program for rkbuild(1).
+#
+# $Id: 1,v 1.1 2017/03/28 06:10:04 tlaronde Exp $
+#
+#  Copyright 2017 Thierry LARONDE <tlaronde@polynum.com>
+#  All rights reserved. 
+#  
+#  This work is under the KerGIS Public Licence v1.0
+# 
+#  See the COPYRIGHT file at the root of the source directory or see
+#  http://www.kergis.org/licence.txt for complete information.
+# 
+# !!!THIS SOFTWARE IS PROVIDED ``AS IS'' WITHOUT ANY WARRANTIES!!! 
+#                      USE IT AT YOUR OWN RISK 
+
+# include admin commands rkcomp wrappers (that includes libsh as well)
+#
+. install_bin/cmds
+
+# include rkinstall config.
+. install_data/rkinstall.cf
+
+# Setting program var for log() leading string.
+#
+program=eprv1
+
+log "Unused: Map verification should have failed at rkconfig(1)."
+
+exit 0

@@ -1,0 +1,11 @@
+PROG = ceprv
+
+SUBDIRS = subr
+
+COBJ = main.o subr/usage.o
+
+LIBES = $(EPRVLIB)
+
+all: $(PROG)
+
+$(COBJ): ceprv.h

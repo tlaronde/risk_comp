@@ -1,0 +1,27 @@
+#!/bin/sh -e
+# TEST post-install program 
+#
+# $Id: RKBANC.post-install,v 1.1 2017/03/11 09:53:12 tlaronde Exp $
+#
+#  Copyright 2004 Thierry LARONDE <tlaronde@polynum.com>
+#  All rights reserved. 
+#  
+#  This work is under the KerGIS Public Licence v1.0
+# 
+#  See the COPYRIGHT file at the root of the source directory or see
+#  http://www.kergis.org/licence.txt for complete information.
+# 
+# !!!THIS SOFTWARE IS PROVIDED ``AS IS'' WITHOUT ANY WARRANTIES!!! 
+#                      USE IT AT YOUR OWN RISK 
+
+cat - <<EOT >&2
+
+==================================================================
+
+                        Post-installing script
+
+==================================================================
+
+EOT
+
+exit 0

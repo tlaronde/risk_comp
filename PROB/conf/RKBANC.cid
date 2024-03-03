@@ -1,0 +1,4 @@
+# This is a sh(1) variables script. The master CID has another syntax.
+USRI=1.2
+PKGNAME=risk_eprv
+VENDOR=polynum

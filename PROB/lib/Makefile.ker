@@ -1,0 +1,9 @@
+LIB = $(EPRVLIB)
+
+COBJ = dummy.o
+
+LIBES =
+
+all: $(LIB)
+
+$(COBJ): eprv.h

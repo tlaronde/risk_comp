@@ -1,0 +1,264 @@
+# The map is an ordered list of instructions specifying to generate
+# data, to verify data and to install data from MATRIX to TARGET.
+#
+# It is ordered from top to bottom (following instructions depending
+# on previous ones; top directory creation for example) and from left
+# to right: the action (the verb) decides what is done for the remaining
+# of the record; for <dst> to be installed, <src>, if specified, shall
+# exist.
+#
+# Since what will be installed is composed, partly or totally, by
+# what is generated, the generation are probably better placed at top
+# since they have to be done first and in order of dependencies that is
+# perhaps not the hierarchy of installation. But this is not mandatory:
+# as long as the order is sound, it should work.
+#
+# Shell variables can be used to replace portions of all en fields
+# except the actions.
+#
+# The map does not describe what is in the data, but describe the
+# namespace: a file hierarchy both on the MATRIX et on the TARGET.
+#
+# Metadata (comments to the reader) can be intersped and are eliminated
+# before processing.
+#
+# In a nutshell, a map entry has the following syntax:
+#
+# <action> <ftype> <owner> <mod> <src> <dst> [<ftn> { <args> }]
+#
+# The aim is to have a single file to record what has to be done, to
+# generate data and to install data allowing conditional behavior and
+# verifications.
+#
+# It is explicit: verifications may be larger than what is defined,
+# but actions are confined to what is defined.
+#
+# The conditionals are always evaluated. Variables not used as
+# conditionals are only replaced if specified via MAP_REPLACE and 
+# MAP_GREPLACE.
+#
+# It is a fault if a MAP_REPLACE variable is unset. It is not for a
+# list variable in MAP_GREPLACE: a list can be empty and the
+# corresponding lines are converted to no-op.
+#
+# Some variables are always added to MAP_REPLACE:
+# PROJECTDIR, OBJDIR, RKLIBDIR, TARGETPKGDIR, TARGETOPDIR, TARGETLIBDIR,
+# TARGETBINDIR, TARGETSBINDIR, TARGETDOCDIR, USER0, GROUP0 and
+# REQUESTED_TYPES for libraries.
+#
+# The aim is to create <dst> according to <src>, depending on the
+# <action> requested and the <type>. <dst> (the pathname) may be
+# processed, on the MATRIX, according to an optional <ftn> that may
+# take arguments.
+#
+# A record can be also used not for installing data or organizing the
+# destination filesystem (directories) but to inform the compilation
+# process about the place where libraries are to be found. This explains
+# why whether <src> or <dst> may be nil. Since the field has to be
+# present, <nil> is specified.
+#
+# Grammar and semantics:
+#
+# At packaging time, on the MATRIX, the prospective hierarchy is placed
+# (chroot'ed in some sense) in a special subdir if it is to be installed
+# permanently on the TARGET, or in another one for data used by the
+# installation process.
+#
+# <entry> := <commentary>
+#	| <empty_line>
+#	| <compilation_entry>
+#	| <installation_entry>
+#	| <target_entry>
+#
+# <commentary> := '#', <nl_terminated_string>
+# <empty_line> := <nl>
+#
+# Note: there is a difference between <commentary> and <no_op>.
+# <commentary> is eliminated by '/^#/d' before. A <no_op> have a first
+# letter field '/^[*] /' i.e. a blank shall follow the no_op action. A
+# <no_op> is eliminated at packaging time. A <commentary> is eliminated
+# at config time.
+#
+# <compilation_entry> := [<conditional>], '@' 'd' '*' '*' '*' <src> '*'
+#	(* this instructs, if the optional conditional evaluates to true,
+#	  to call make on the directory entry *)
+#
+# <target_entry> :=
+#	<target_action> <ftype> <owner> <mode> <src> <dst> <name_processing>
+#
+# <name_processing> := - | <ftn> { <arg> }
+#
+# <installation_entry> := <installation_action> <ftype> <owner> <mode> <src> <dst>
+#	(* an installation_entry has no <name_processing> *)
+#
+# <installation_action> := [<conditional>] , '.'
+# '.' : install locally in install_data/ (and not in TARGET hier).
+#
+# <target_action> := [<conditional>] ,
+#	<action> | <if_not_exists> | <choice> | <mimic> | <verification>
+#
+# <action> := '+' | '*' (* '-' as "delete" is not implemented *)
+# '+' : create the file/dir;
+# '*' : drop entry.
+#
+# <if_not_exists> := '!' (* if already exists, no action *)
+# '!' : keep the existing file/dir as is; don't install new one and
+#	don't change ownership or permissions if existing;
+#
+# <choice> := ':' (* if existing chosen, no action *>
+# ':' : choice: publish the difference between new and old and ask
+# user if he wants to upgrade. If no upgrade, no further action is
+#	taken on file: no ownership or permissions changes;
+#
+# <mimic> := '=' (* whether no action or '+' depending on previous *)
+# '=' : does same action as previous entry if the previous one was
+# 	processed.
+#
+# <verification> := '?' (* no action: simply verify presence on TARGET *)
+# '?' : verify existence of file/dir at install time (generally shared
+# 	extern libraries; but could be programs). No action is done, no
+#	changes including no permissions changes: if the administrator has
+#	not allowed writing under a verified (upper 'D') dir, the
+#	installation will fail.
+#
+# Indeed, the only actions are create, delete (not implemented) or
+# do nothing. <verify> doesn't ever create. <mimic> depends on previous
+# action (create or do nothing). <condition> depends on existence: if
+# exists do nothing; else create. <choice> depends on user choice : if
+# preserving existing, do nothing; else create (perhaps replace).
+#
+# <conditional> := '$', <var_name> , '?'
+# <var_name> : a sh(1) valid variable NAME known to rkconfig(1) :
+# alphanumerics and underscore, not starting by digit. If empty or 
+# not set, the condition is false and the entry deleted. Variables
+# with values can act as condition since set|not_set is interpreted
+# as a boolean. Same with GREPLACE variables. A variable can appear
+# as a condition and as a replacement value. Hence the conditions are
+# treated first.
+#
+# <ftype> := 'D' | 'd' | 'f' | 'l'
+#
+# 'D': "root" directory (should be next leaf to existing). rkpkg will
+# emit a verification action about the upper level dir, treated at
+# installation time. At packaging time, and _only_ at packaging time,
+# the intermediary subdirs will be created. At install time, 'D' is
+# treated as 'd'.
+# 'd': directory. rkpkg will not create intermediary subdirs: shall be
+# specified.
+# 'f': normal file (not dir).
+# 'l' is special: it is done last, since it is meant to be a symbolic
+# link (copy if not supported), on the TARGET, to an existing file/dir.
+# Only the last leaf is created, the hier must be set before (perhaps
+# with "+ d ..." entries). "<src>" can not be verified on MATRIX since
+# it can refer to an existing file on TARGET. Furthermore, links to
+# directories will simply don't work and this shall be intercepted at
+# config time.
+#
+# <owner> := <nil> (* nil; uninstalled for lib registration *)
+#		| <user_name> , ':' , <group_name>
+#
+# <mod> := <nil> (* nil; uninstalled for lib registration *)
+#		| (3 | 4) * <mod_numerique>
+# <mod_numerique> := <mod_user> '|' <mod_group> '|' <mod_other>
+#
+# <src> := <nil> (* nil; pure creation *) | <abs_path_without_blanks>
+# <dst> := <nil> (* nil: placed under install_data/, not installed *)
+#		| <abs_path_without_blanks>
+#
+# <abs_without_blanks> := /[a-zA-Z0-9/_-]{[a-zA-Z0-9/_-]}
+#	(* We can use variables; but there are not part of the grammar and
+#		substituted before the map is used by rkpkg(1) or
+#		rkinstall(1) *)
+#
+# <ftn> (* only name manipulations done at compile time on MATRIX for
+#	now *)
+#
+# <nil> := '*'
+#
+# Processing of the map:
+#	1) A (light) syntax verification is done by rkconfig(1) that creates
+#		the directories under .rkcomp/; rkconfig(1) does also all the
+#		substitutions and the name processing. The <commentaries> are
+#		eliminated first; then the conditions are treated before
+#		performing substitutions, extracting the compilation
+#		instructions and adding the libraries verifications.
+#	2) rkpkg(1) places the files in the .rkcomp/ subdirs and creates the
+#		tarball, splitting data (in the subdirs) from metadata
+#		(ownership and permissions) in text files one per action.
+#		Another checking is done: except for root dirs ('D'), the
+#		intermediate subdirs shall be specified;
+#	3) rkinstall(1) does the installation between pre_install and
+#		post_install processing using the data in the subdirs and the
+#		metadata in the various files depending on action.
+#
+
+#========== THE MAIN DIR TREE
+# Everything will be rooted at TARGETPKGDIR, requiring TARGETPKGDIR/.. .
++ D $USER0:$GROUP0 755 * $TARGETPKGDIR
++ d $USER0:$GROUP0 755 * $TARGETPKGDIR/bin
++ d $USER0:$GROUP0 755 * $TARGETPKGDIR/etc
++ d $USER0:$GROUP0 755 * $TARGETPKGDIR/usr
++ d $USER0:$GROUP0 755 * $TARGETPKGDIR/usr/lib
++ d $USER0:$GROUP0 755 * $TARGETPKGDIR/usr/include
++ d $USER0:$GROUP0 755 * $TARGETPKGDIR/usr/share
+# The root subdir for man pages depending on TARGET.
+#
+! D $RKBANC_USER:$RKBANC_GROUP 755 * $TARGETPKGDIR/usr/share/0 Tmandir
+
+#========== SYSTEM LIBRARIES
+# Compiled.
+@ d * * $PROJECTDIR/lib/ *
++ f $USER0:$GROUP0 444 $RKLIBDIR/$EPRVLIB $TARGETPKGDIR/usr/lib/$EPRVLIB Tlibexpl $REQUESTED_TYPES
+
+#========== PROGRAMS
+@ d * * $PROJECTDIR/c/ *
++ f $USER0:$GROUP0 755 $OBJDIR/c/ceprv $TARGETPKGDIR/bin/ceprv
+@ d * * $PROJECTDIR/cweb/ *
++ f $USER0:$GROUP0 755 $OBJDIR/cweb/cweprv $TARGETPKGDIR/bin/cweprv
++ d $RKBANC_USER:$RKBANC_GROUP 755 * $TARGETPKGDIR/usr/share/1 Tmandir
++ f $USER0:$GROUP0 755 $PROJECTDIR/cweb/MAN $TARGETPKGDIR/usr/share/1/cweprv Tman
+
+#========== DATA
+# headers $TARGETPKGDIR/files
++ f $USER0:$GROUP0 444 $PROJECTDIR/lib/eprv.h $TARGETPKGDIR/usr/include/eprv.h
+#========== PRESERVED configuration
+#
+# For probing purposes we copy something that we will compare after.
+# Verification is not done in order but before: verified file has to
+# exist on TARGET. But pre-install is called before verification. So
+# this is pre-install that will copy the data, put in the install_data/
+# subdir precisely for that (we can check on TARGET != MATRIX).
+#
+# Here, the file is copied in the install_data/, outside the TARGET
+# hier. Before installing on TARGET, the pre_install program will
+# copy this to /tmp/precious.txt.
+#
+. f $RKBANC_USER:$RKBANC_GROUP 644 $PROJECTDIR/etc/eprv.ref /eprv.orig
+#
+# The modified one is created (compilation required):
+#
+@ d * * $PROJECTDIR/etc/ *
+
+# Just verify existence of dir. Don't create on TARGET but create
+# for packaging. We consider the file as "precious" so the
+# installation has to require user to overwrite or not.
+#
+? D $USER0:$GROUP0 1777 * /tmp
+: f $RKBANC_USER:$RKBANC_GROUP 600 $OBJDIR/etc/eprv /tmp/precious.txt
+
+#========== CONDITIONAL PROBING
+#
+# The corresponding probing scripts (EPRVS is a list) will be put in
+# install_data/ and not in TARGET hier, for use by the installation
+# programs.
+#
+$EPRVS?. d $USER0:$GROUP0 755 * /$EPRVS
+= f $USER0:$GROUP0 755 $PROJECTDIR/eprv/sh1/$EPRVS /$EPRVS/script
+= f $USER0:$GROUP0 755 $PROJECTDIR/eprv/data/$EPRVS /$EPRVS/data
+# Just to stop the GREPLACE block. A no-op entry.
+* f $RKBANC_USER:$RKBANC_GROUP 444 $PROJECTDIR/CID /CID
+$EPRVS?. f $USER0:$GROUP0 755 $PROJECTDIR/conf/eprv$EPRVS /eprv$EPRVS
+
+#========== NO-OP
+# Should be kept by rkconfig; discarded by rkpkg.
+* d $USER0:$GROUP0 1777 * $TARGETPKGDIR/tmp

@@ -1,0 +1,11 @@
+# Epreuve de la carte supplémentaire invalide.
+#
+EPRVS=1
+
+##RESULTAT : doit échouer à la configuration.
+#
+# En ajoutant la carte supplémentaire, cela doit échouer à la
+# configuration.
+# eprv/sh1/eprv1 n'existe pas, mais cela ne serait détecté qu'à la
+# mise en paquet qui n'est pas atteinte.
+#

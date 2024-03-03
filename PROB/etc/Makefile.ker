@@ -1,0 +1,4 @@
+all: eprv
+
+eprv:
+	echo "DATE=$$(date '+%FT%H:%M:%S%z')" > $@

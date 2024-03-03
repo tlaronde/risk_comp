@@ -1,0 +1,7 @@
+# Epreuves des substitutions de rkconfig(1) avec GRPEPLACE.
+#
+EPRVS="2 3"
+
+##RESULTAT : les substitutions doivent respecter les blocs. rpkg(1)
+# doit échouer car certains fichiers n'existent pas.
+#

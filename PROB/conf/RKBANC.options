@@ -1,0 +1,13 @@
+            Here are the RKBANC user definable options
+
+TARGETPKGDIR [/tmp/RKBANC]
+	Where the package installation will be rooted.
+
+RKBANC_USER [tlaronde]
+	The owner of some files.
+
+RKBANC_GROUP [users]
+	The primary group of some files.
+
+EPRVS []
+	A space separated indices of probes (épreuves) to run.

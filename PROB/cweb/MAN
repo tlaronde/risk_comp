@@ -1,0 +1,83 @@
+.TH aprog 1 "2014-07-07" R.I.S.K. 
+.SH NAME
+aprog \- a program doing something
+.SH SYNOPSIS
+.B aprog
+[
+.I options
+]
+.IR file [.suffix]
+.br
+.SH DESCRIPTION
+The program
+.B aprog
+takes a X file
+.IR file [.suffix]
+and...
+The X file may be specified without the
+.I .suffix
+If the
+.B -G
+flag is given
+.B aprog
+will...
+.PP
+.B aprog
+is...
+For more information, see the manual 
+.I aprog.tex 
+in the SOMEDIR/ directory.  
+The manual can be printed with the following commands:
+.EX 4
+.IP
+tex aprog
+.br
+dvips aprog -o aprog.ps
+.br
+lpr aprog.ps
+.LP
+.EE
+.SH OPTIONS
+.TP
+.B -V
+Print the Version.
+.TP
+.B -h
+Print the usage.
+.SH ENVIRONMENT
+All the environment variables below have a default definition
+including the current working directory, and the normalized
+directories in the kerTeX hierarchy. If you run the commands in
+the directory where your customized files live, and the system
+shared ones are in the dedicated and normalized kerTeX directories,
+you will generally not have to specifically overwrite the defaults.
+.TP
+.B KERTEXINPUTS
+a semicolon separated list of directories to search for the
+.I dvips.cnf
+configuration file, and the files to include.
+.br
+If automatic font generation is on, also the directories to search for 
+the mf macro definitions and cm programs.
+.TP
+.B KERTEXFONTS
+a semicolon separated list of directories to search for the fonts (kerTeX
+also search in these directories for subdirectories like
+.I cm,
+.I vf,
+.I pk,
+.I pfa,
+.I pfb,
+so you have only to define parent directories.
+.SH EXAMPLE
+.B aprog -h
+displays the help.
+.SH "SEE ALSO"
+mf(1), afm2tfm(1), tex(1), latex(1), lpr(1), 
+.I dvips.tex.
+.SH DIAGNOSTICS
+.LP
+.SH NOTES
+The X format is a registered trademark of...
+.SH AUTHOR
+Thierry Laronde <tlaronde@polynum.com>.

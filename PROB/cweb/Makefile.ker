@@ -1,0 +1,13 @@
+PROG = cweprv
+
+COBJ = cweprv.o
+
+LIBES = $(EPRVLIB)
+
+CWEB = cweprv.c cweprv.h
+
+CWEBINPUTS = $(SRCDIR)
+
+all: $(PROG)
+
+$(CWEB): cweprv.w

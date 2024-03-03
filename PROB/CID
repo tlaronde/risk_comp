@@ -1,0 +1,13 @@
+USRI: 2.12
+VERSION: 1.0B.0.0
+VENDOR: polynum
+LANG: POSIX.2
+NAME: R.I.S.K. (Reduced Instructions Set toolKit) - Probare
+AUTHORS: Thierry Laronde <tlaronde@polynum.com>
+DESCRIPTION: probing the R.I.S.K. framework.
+REQUIRE:	
+ELEMENTS:
+LINK:
+DEPENDS:
+PROVIDE:
+COMMENTS:

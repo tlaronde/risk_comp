@@ -1,0 +1,100 @@
+#  Copyright 2004, 2017, 2023 Thierry LARONDE <tlaronde@polynum.com>
+#  All rights reserved. 
+#  
+#  This work is under the KerGIS Public Licence v1.0
+# 
+#  See the COPYRIGHT file at the root of the source directory or see
+#  http://www.kergis.org/licence.txt for complete information.
+# 
+# !!!THIS SOFTWARE IS PROVIDED ``AS IS'' WITHOUT ANY WARRANTIES!!! 
+#                      USE IT AT YOUR OWN RISK 
+
+#========== THIS KTOOLS API
+RK_API_VERSION=1.20
+
+#========== ADJUST WHEN RELEASING
+# MAJOR.MINOR[.REVISION][STATUS] where STATUS is one of:
+#	if STABLE nothing
+#	BETA -> -BETA
+#	ALPHA -> -ALPHA
+#	CURRENT (development) an uppercase letter indicating an intermediate
+#	stage
+#
+# This is set in CID.
+
+#========== SETTING THE VARIABLES
+
+TARGETPKGDIR=/tmp/RKBANC
+
+# We do not use ": ${VARIABLE:="value"} because '^VARIABLE=' instructs
+# rkconfig(1) to publish the variables.
+#
+RKBANC_USER=${RKBANC_USER:-tlaronde}
+RKBANC_GROUP=${RKBANC_GROUP:-users}
+
+	# indented hence not published.
+: ${EPRVS:=}
+	neprv=0
+for eprv in $EPRVS; do
+	neprv=$(($neprv + 1))
+	if test $eprv = 1; then
+		# On peut définir les cartes à utiliser via MAPS (définie par
+		# défaut avec seulement $PROJECT.map.
+		# Le chemin doit être pleinement qualifié mais rkconfig(1)
+		# définit PROJECT et PROJECTDIR...
+		#
+		MAPS="$PROJECT.map $PROJECTDIR/eprv/map/1"
+	fi
+done
+
+#========== MAP HANDLING
+#
+# We need to instruct rkconfig(1) to replace some project added
+# variables in the map.
+#
+# Some variables are always added to MAP_REPLACE:
+# PROJECTDIR, OBJDIR, RKLIBDIR, TARGETPKGDIR, TARGETOPDIR, TARGETLIBDIR,
+# TARGETBINDIR, TARGETSBINDIR, TARGETDOCDIR, USER0, GROUP0.
+#
+# The other have to be listed in PROJECT.replace.
+# We add RKBANC_USER and RKBANC_GROUP.
+
+# We can set lists of keyword and use MAP_GREPLACE to add as many
+# substituted lines as there are items in the list, taking the
+# prototype line having the list variable name in it. This will work
+# for conditionals too.
+#
+# They go in PROJECT.greplace. Here: EPRVS.
+
+#========== COMPILATION AND LIBRARIES
+#
+# our libes. The compilation framework creates them in the ./RKLIB/
+# compilation subdir and all the libraries are visible (or invisible)
+# in the ./RKLIB/ subdir.
+#
+EPRVLIB=$(rk_add_lib libeprv__0.1.0 $PROJECTDIR/lib eprv.h $REQUESTED_TYPES)
+
+# The fundamental libraries and utilities are automatically checked
+# by rkconfig(1). We add here a non fundamental librarie to check
+# both libraries handling and checking of the requirements on TARGET.
+#
+# Two flavors.
+#
+CURSESLIB=${CURSESLIB:-$(rk_which_lib_of libcurses__ curses.h)}
+	CURSESLIB=${CURSESLIB:-$(rk_which_lib_of libncurses__ ncurses.h)}
+
+#----- CWEB
+# M_TOOLS_REQUIRED is set by MATRIX and has to be augmented with 
+# whatever non standard tool needed.
+#
+M_TOOLS_REQUIRED="$M_TOOLS_REQUIRED ctangle"
+
+#========== SANITY CHECKS
+# Verify that we have the mandatory libes
+# We do not use liby (it is so light that this is generally useless)
+#
+# The root PROJECT sets REQUIRED. An included module has to augment it.
+# REQUIRED="$REQUIRED name [name...]"
+#
+REQUIRED="CURSESLIB"
+

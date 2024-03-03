@@ -1,0 +1,9 @@
+#========== TESTING RKCONFIG MAP CHECKING
+# Invalid action
+@ d $USER0:$GROUP0 1777 * $TARGETPKGDIR/tmp
+# Invalid type
++ * $USER0:$GROUP0 1777 * $TARGETPKGDIR/tmp
+# Invalid link
++ l * * * /tmp/nolink
+# No function for install_data
+. d $RKBANC_USER:$RKBANC_GROUP 755 * $TARGETPKGDIR/usr/share/0 Tmandir
