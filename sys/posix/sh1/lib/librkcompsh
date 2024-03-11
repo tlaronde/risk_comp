@@ -1,9 +1,8 @@
-# $Id: librkcompsh,v 1.71 2024/01/27 12:52:33 tlaronde Exp $
 #
 # This is the KerGIS Tools' Bourne shell functions "library".
 # It is used by `rkconfig' and `rkbuild'.
 #
-#  Copyright 2004-2014, 2016-2017, 2020, 2023
+#  Copyright 2004-2014, 2016-2017, 2020, 2023--2024
 #	Thierry LARONDE <tlaronde@polynum.com>
 #  All rights reserved. 
 #  
@@ -142,8 +141,8 @@ rk_deref()
 
 # rk_which_cmd_of search the first available occurrence of a space 
 # separated list of cmds first in the current PATH of the shell; if not
-# found in the RK_PATH. Using first command allows for a shell where
-# these are builtins and not pathnames.
+# found in the RK_PATH. Using, first, the command builtin allows to find them if
+# there are builtins and not pathnames.
 #
 rk_which_cmd_of()
 {
@@ -153,15 +152,34 @@ rk_which_cmd_of()
 		  echo "$_p"
 		  return
 		fi
-	  for p in `echo "$RK_PATH" | sed 'y/:/ /'`; do
-	    if test -f "$p/$cmd" && test -x "$p/$cmd"; then
-	      echo "$p/$cmd"
+	  for _p in `echo "$RK_PATH" | sed 'y/:/ /'`; do
+	    if test -f "$_p/$cmd" && test -x "$_p/$cmd"; then
+	      echo "$_p/$cmd"
 		  return
 		fi
 	  done
 	done
+}
 
-	echo ""
+# rk_find_cmd_regex() search a command given a regexpattern.
+#
+# parameter:  regex legacy pattern (ex.: '^python[0-9.]*$').
+#
+# Caveats since the pattern is a shell one, the argument must be
+# passed protecting from shell interpretation.
+#
+# All instances found printed, as absolute paths, one per line.
+#
+rk_find_cmd_regex()
+{
+	for _p in `echo "$RK_PATH" | sed 'y/:/ /'`; do
+		junk=$(cd $_p 2>/dev/null && { ls | grep "$1"; } 2>/dev/null)
+		if test "$junk"; then
+			for _c in $junk; do
+				echo "$_p/$_c"
+			done
+		fi
+	done
 }
 
 # These functions translate the lib canonical name in the  TARGET
