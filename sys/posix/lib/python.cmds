@@ -1,0 +1,96 @@
+# Python OS independent routines. Only included if RKINSTALL_AUX_CMDS
+# includes it.
+#
+# Copyright 2024
+#   Thierry LARONDE <tlaronde@polynum.com>
+# Public Domain
+
+# This is dot'ed after TARGET cmds that dot's libsh, so do not
+# re-include it. But we will have the libsh definitions.
+
+#---------- SUBR
+#
+# Change a dot'ed version (limited to major.minor.release)
+# into an int printed on stdout.
+#
+v2i()
+{
+	_this="$1"
+	_mult=65536
+	_res=0
+	# nint will be set to the number of int considered
+	_i=0
+	while test $_i -le $2; do
+		_num=$(echo $_this | sed 's/^\([0-9]*\).*$/\1/')
+		test "$_num" || break
+		_res=$(($_res + $_mult * $_num))
+		_this=${_this#$_num}
+		_this=${_this#.}
+		test "$_this" || break
+		_mult=$(($_mult / 256))
+		_i=$(($_i + 1))
+	done
+	echo $_res
+}
+
+# We search for all versions of Python matching the required version.
+# The match string is an operator and without any space, the dot
+# separated major and minor.
+#
+# The comparison will be made only with the number of int given
+# in the ref version (if only major, minor, only major and minor will
+# be compared).
+#
+# condition := op version
+# op :=  "<" | "<=" | "=" | "==" | ">=" | ">" 
+# version := int ["." int ["." int]]
+#
+# Call: Tpython condition
+#
+# The condition is required. Gestion of the __pycache__ subdir is
+# left to python. The routine has to be called in the module
+# directory.
+#
+Tpython()
+{
+	operator=$(echo $1 | sed 's/^\([<=>]\{1,2\}\)[0-9]\{1,\}[.0-9]*$/\1/')
+	version=$(echo $1 | sed 's/^[<=>]\{1,2\}\([0-9]\{1,\}[.0-9]*\)$/\1/')
+	test "$operator" && test "$version"\
+		|| {
+			log "Tpython(): incorrect condition '$1'"
+			return
+		}
+	case $operator in
+		"<"|"<="|"="|"=="|">="|">") ;;
+		*) log "Tpython(): invalid operator '$operator'"
+			return;;
+	esac
+
+	vref=$(v2i $version 3)
+	ndot=$(echo $version | sed 's/[^.]//g')
+	ndot=${#ndot}
+
+	# Search all python versions and then select the ones matching.
+	find_cmd_regex '^python[0-9.]*$'\
+		| while read cmd; do
+			vthis=$($cmd -V)
+			vthis=${vthis#Python }
+			vthis=$(v2i $vthis $ndot)
+			case $operator in
+				"<") test $vthis -lt $vref && echo $cmd
+					;;
+				"<=") test $vthis -le $vref && echo $cmd
+					;;
+				"="|"==") test $vthis -eq $vref && echo $cmd
+					;;
+				">=") test $vthis -ge $vref && echo $cmd
+					;;
+				">") test $vthis -gt $vref && echo $cmd
+					;;
+			esac
+		done\
+	| while read cmd; do
+		$cmd -m py_compile *.py
+	done
+}
+

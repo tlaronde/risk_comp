@@ -1,8 +1,7 @@
-# $Id: libsh,v 1.12 2024/01/27 12:52:37 tlaronde Exp $
-#
 # Miscellanei routines used by scripts at installation time.
 #
-#  Copyright 2004,2013 Thierry LARONDE <tlaronde@polynum.com>
+#  Copyright 2004, 2013, 2024
+#    Thierry LARONDE <tlaronde@polynum.com>
 #  All rights reserved. 
 #  
 #  This work is under the KerGIS Public Licence v1.0
@@ -23,5 +22,26 @@
 log()
 {
 	echo "${program:-$PROJECT}: $*" >&2
+}
+
+# find_cmd_regex() search a command given a regexpattern.
+#
+# parameter:  regex legacy pattern (ex.: '^python[0-9.]*$').
+#
+# Caveats since the pattern is a shell one, the argument must be
+# passed protecting from shell interpretation.
+#
+# All instances found printed, as absolute paths, one per line.
+#
+find_cmd_regex()
+{
+	for _p in `echo "$PATH" | sed 'y/:/ /'`; do
+		junk=$(cd $_p 2>/dev/null && { ls | grep "$1"; } 2>/dev/null)
+		if test "$junk"; then
+			for _c in $junk; do
+				echo "$_p/$_c"
+			done
+		fi
+	done
 }
 

@@ -287,6 +287,7 @@ error()
 	  option) log "This option is unknown!";
 		log USAGE "$usage";;
 	  missing_cid) log "$PROJECTDIR/CID doesn't exist!";;
+	  missing_cmds) log "no '$2.cmds' existing!";;
 	  missing_confdir) log "$TOOLDIR does not lead to my tools!";
 	    log USAGE "$usage";;
 	  missing_conffile) log "The conffile $2 does not exist!";;
@@ -627,6 +628,9 @@ fi
 #
 if ! test -f "$PROJECT.options"; then
 	error missing_options
+elif test $show_options = "YES" ; then
+	cat "$PROJECT.options"
+	exit 0
 fi
 
 #------TARGET ENVIRONMENT VARIABLES 
@@ -927,16 +931,8 @@ fi
 # the high hand about was is included, what is not and the requirements.
 #
 : ${MAPS:=$PROJECT.map}
-: ${OPTIONS:=$PROJECT.options}
 : ${REQUIRED:=""}
 : ${DEPS:=$PROJECT.deps}
-
-if test $show_options = "YES" ; then
-	cat $OPTIONS
-	clean_tmp;
-	clean_objdir;
-	exit 0
-fi
 
 #------ VERIFYING REQUIRED.
 cat $DEPS >$OBJDIR/.rkcomp/deps
@@ -1467,6 +1463,20 @@ fi
 for var in $RKINSTALL_CONF_ADD; do
   eval "echo $var=\$$var" >>$rkinstall_conf
 done
+
+# adding auxiliary cmds.
+#
+# RKINSTALL_AUX_CMDS is optional.
+#
+: ${RKINSTALL_AUX_CMDS:=""}
+for aux in $RKINSTALL_AUX_CMDS; do
+	if test -s "$TOOLDIR/sys/posix/lib/$aux.cmds"; then
+		cp "$TOOLDIR/sys/posix/lib/$aux.cmds" $OBJDIR/.rkcomp/install_bin/$aux.cmds
+	else
+		error missing_cmds "$aux"
+	fi
+done
+
 
 # The version of the install time scripts is fixed at configuration
 # time.
