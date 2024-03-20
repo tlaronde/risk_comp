@@ -1,4 +1,5 @@
-#  Copyright 2004, 2017, 2023 Thierry LARONDE <tlaronde@polynum.com>
+#  Copyright 2004, 2017, 2023--2024
+#    Thierry LARONDE <tlaronde@polynum.com>
 #  All rights reserved. 
 #  
 #  This work is under the KerGIS Public Licence v1.0
@@ -29,7 +30,7 @@ TARGETPKGDIR=/tmp/RKBANC
 # We do not use ": ${VARIABLE:="value"} because '^VARIABLE=' instructs
 # rkconfig(1) to publish the variables.
 #
-RKBANC_USER=${RKBANC_USER:-tlaronde}
+RKBANC_USER=${RKBANC_USER:-$(id -un)}
 RKBANC_GROUP=${RKBANC_GROUP:-users}
 
 	# indented hence not published.
@@ -88,6 +89,20 @@ CURSESLIB=${CURSESLIB:-$(rk_which_lib_of libcurses__ curses.h)}
 # whatever non standard tool needed.
 #
 M_TOOLS_REQUIRED="$M_TOOLS_REQUIRED ctangle"
+
+#========== INSTALLATION REQUIREMENTS
+#
+# Auxiliary commands, on the TARGET, can be requested. They will be
+# copied in the package so that they are available at installation
+# time.
+# Standard post-processing, like the routines for MAN installation,
+# are automatically added. Auxiliaries are things that are not POSIX
+# defined. Here as example, python routines to search for the versions
+# of a python installation on the TARGET and then the byte-compilation
+# for compatible python versions found in the __pycache__ subdir,
+# according to pep-3147.
+#
+RKINSTALL_AUX_CMDS=python
 
 #========== SANITY CHECKS
 # Verify that we have the mandatory libes

@@ -1,9 +1,8 @@
 #!/bin/sh -e
 # TEST post-install program 
 #
-# $Id: RKBANC.post-install,v 1.1 2017/03/11 09:53:12 tlaronde Exp $
-#
-#  Copyright 2004 Thierry LARONDE <tlaronde@polynum.com>
+#  Copyright 2004, 2024
+#    Thierry LARONDE <tlaronde@polynum.com>
 #  All rights reserved. 
 #  
 #  This work is under the KerGIS Public Licence v1.0
@@ -13,6 +12,24 @@
 # 
 # !!!THIS SOFTWARE IS PROVIDED ``AS IS'' WITHOUT ANY WARRANTIES!!! 
 #                      USE IT AT YOUR OWN RISK 
+
+# include admin commands rkcomp wrappers (that includes libsh as well)
+#
+. install_bin/cmds
+
+# include python commands
+. install_bin/python.cmds
+
+# include rkinstall config.
+. install_data/rkinstall.cf
+
+# Setting program var for log() leading string.
+#
+program=post-install
+
+log "Byte-compiling python module"
+cd $TARGETPKGDIR/usr/lib/python/prob
+Tpython '>=1.0' # called in the module dir; for all version >= 1.0
 
 cat - <<EOT >&2
 

@@ -199,11 +199,12 @@
 + d $USER0:$GROUP0 755 * $TARGETPKGDIR/etc
 + d $USER0:$GROUP0 755 * $TARGETPKGDIR/usr
 + d $USER0:$GROUP0 755 * $TARGETPKGDIR/usr/lib
++ d $USER0:$GROUP0 755 * $TARGETPKGDIR/usr/lib/python
 + d $USER0:$GROUP0 755 * $TARGETPKGDIR/usr/include
 + d $USER0:$GROUP0 755 * $TARGETPKGDIR/usr/share
 # The root subdir for man pages depending on TARGET.
 #
-! D $RKBANC_USER:$RKBANC_GROUP 755 * $TARGETPKGDIR/usr/share/0 Tmandir
++ d $RKBANC_USER:$RKBANC_GROUP 755 * $TARGETPKGDIR/usr/share/0 Tmandir
 
 #========== SYSTEM LIBRARIES
 # Compiled.
@@ -217,6 +218,10 @@
 + f $USER0:$GROUP0 755 $OBJDIR/cweb/cweprv $TARGETPKGDIR/bin/cweprv
 + d $RKBANC_USER:$RKBANC_GROUP 755 * $TARGETPKGDIR/usr/share/1 Tmandir
 + f $USER0:$GROUP0 755 $PROJECTDIR/cweb/MAN $TARGETPKGDIR/usr/share/1/cweprv Tman
+# This python will be post-processed by post-install to byte-compile
+# for whatever python versions are on the TARGET.
++ d $USER0:$GROUP0 755 * $TARGETPKGDIR/usr/lib/python/prob
++ f $USER0:$GROUP0 755 $PROJECTDIR/py/prob.py $TARGETPKGDIR/usr/lib/python/prob/prob.py
 
 #========== DATA
 # headers $TARGETPKGDIR/files
