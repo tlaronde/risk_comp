@@ -3,7 +3,7 @@
 TARGETPKGDIR [/tmp/RKBANC]
 	Where the package installation will be rooted.
 
-RKBANC_USER [tlaronde]
+RKBANC_USER [$id -un]
 	The owner of some files.
 
 RKBANC_GROUP [users]
