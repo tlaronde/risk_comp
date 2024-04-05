@@ -22,6 +22,7 @@ all:
 	nb=0;\
 	for dir in `cat $(RK_LIST)`; do \
 	  nb=$$(($$nb + 1)); \
+	  dir=$${dir%/}; \
 	  { echo $$dir | grep '^[^#@!]' >/dev/null 2>&1;} || continue; \
 	  $(MAKE) SAVE_SPACE=$(SAVE_SPACE) compile dir=$$dir nb=$$nb; \
 	done
@@ -56,15 +57,17 @@ compile:
 	@ [ "x$(dir)" != "x" ] || { echo "You must specify a dir!" >&2; exit 1; }
 	@test -f $(PROJECTDIR)/$(dir)/Makefile.ker || { echo "$(PROJECTDIR)/$(dir) is not a correct dir!" >&2; exit 1; }
 	@echo >&2; echo "#========== BUILDING $(dir)" >&2;
-	@if ! $(SHELL) $(TOOLDIR)/sys/posix/sh1/rkbuild $(dir); then\
-		echo "Problem rkbuilding $(dir). Skipping..." >&2; \
-	    { echo '1,$$s%^[#!@]*$(dir)$$%!$(dir)%'; echo w; echo q;} | ed $(RK_LIST) >/dev/null 2>&1; \
+	@dir=$(dir); dir=$${dir%/}; \
+	if ! $(SHELL) $(TOOLDIR)/sys/posix/sh1/rkbuild $$dir; then\
+		echo "Problem rkbuilding $$dir. Skipping..." >&2; \
+	    { echo '1,$$s%^[#!@]*'$$dir'$$%!'$$dir'%'; echo w; echo q;} | ed $(RK_LIST) >/dev/null 2>&1; \
 		exit 1;\
 	else\
 		cd $(OBJDIR)/$(dir);\
 		if ! $(MAKE); then\
-			echo "Problem making $(dir). Skipping..." >&2;\
-			{ echo '1,$$s%^[#!@]*$(dir)$$%!$(dir)%'; echo w; echo q;} | ed $(RK_LIST) >/dev/null 2>&1;\
+			dir=$(dir); dir=$${dir%/}; \
+			echo "Problem making $$dir. Skipping..." >&2;\
+			{ echo '1,$$s%^[#!@]*'$$dir'$$%!'$$dir'%'; echo w; echo q;} | ed $(RK_LIST) >/dev/null 2>&1;\
 			exit 1;\
 		fi;\
 		test "x$(SAVE_SPACE)" != "xYES"\
@@ -75,7 +78,8 @@ compile:
 	else \
 	  echo >&2; echo "#========== $(dir) DONE" >&2;\
 	fi;\
-	{ echo '1,$$s%^[#!@]*$(dir)$$%@$(dir)%'; echo w; echo q;} | ed $(RK_LIST) >/dev/null 2>&1; 
+	dir=$(dir); dir=$${dir%/}; \
+	{ echo '1,$$s%^[#!@]*'$$dir'$$%@'$$dir'%'; echo w; echo q;} | ed $(RK_LIST) >/dev/null 2>&1; 
 
 debug:
 	@if test $(MATRIX) != plan9; then\
