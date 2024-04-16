@@ -1260,7 +1260,7 @@ fi
 #
 regexp=$(echo "$PROJECTDIR/" | sed -e 's!/!\\/!g')
 sed -n '/^@ /s/^@ . [^ ][^ ]* [^ ][^ ]* \([^ ][^ ]*\) .*$/\1/p' $rk_map\
-	| sed "s/^$regexp//" >$rk_list
+	| sed -e "s/^$regexp//" -e 's!/*$!!' >$rk_list
 
 # an easy way to publish how far we are (used in OBJDIR/Makefile)
 #
