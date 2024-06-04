@@ -1,0 +1,164 @@
+#!/bin/sh
+# Find a python instance matching the version requirement, if any.
+#
+# Env: PYTHON is taken if defined, but verified against requested
+# version.
+#
+# Success: returns on stdout pathname of highest matching version python
+# instance found and exits with 0 status;
+#
+# Failure: returns nothing on stdout (may print error message on
+# stderr) and set exit status to 1 for syntax error, 2 for no
+# matching version found in PATH.
+#
+version=0.1
+copyright="Copyright 2024
+	Thierry LARONDE <tlaronde@kergis.com>
+	All rights reserved. 
+  
+This work is under the RISK Licence.
+See the COPYRIGHT file at the root of the source directory.
+
+!!!THIS SOFTWARE IS PROVIDED ``AS IS'' WITHOUT ANY WARRANTIES!!! 
+                      USE IT AT YOUR OWN RISK 
+"
+
+#================== NOTHING TO CHANGE BELOW! =====================
+#
+program=rkpython
+
+usage="
+	$program [-h] [-V] [ condop major [minor [micro]]
+(TARGET) Find the greatest matching versioned instance of python interpreter. 
+
+Options:
+ -h	display the Help
+ -V	display Version of the program
+ condop major [minor [micro]]
+	when giving a version, set the conditional operator in one of
+	'<' | '<=' | '==' | '>=' | '>' and at least a major number,
+	all as separate arguments.	
+"
+
+#========== ENV
+#
+: ${PYTHON:=}
+
+#========== SUBR
+cknum()
+{
+	test -z "$(echo $1 | sed 's/[0-9]*//')" || {
+		echo "'$1' is an incorrect number" >&2
+		exit 1
+	}
+}
+
+ckver()
+{
+	_fig=$($1 -c "import sys; print(sys.version_info[0])")
+	test "$_fig" || {
+		echo "'$1' is incorrect python interpreter" >&2
+		return
+	}
+	_version=$(($_fig * 1000 * 1000))
+	if test $nfig -gt 1; then
+		_fig=$($1 -c "import sys; print(sys.version_info[1])")
+		_version=$(($_version + $_fig * 1000))
+		if test $nfig -eq 3; then
+			_fig=$($1 -c "import sys; print(sys.version_info[2])")
+			_version=$(($_version + $_fig))
+		fi
+	fi
+
+	if test $nfig -gt 0; then
+		eval test "$_version" "-$test_op" "$sversion" || return
+	fi
+
+	# Here, this instance is tentatively retained. Greatest?
+	if test "$_version" -gt "$bversion"; then
+		PYTHON="$1"
+		bversion=$_version
+	fi
+}
+
+#========== CHECKS (no writes)
+#
+set -eu # can be run as sh(1) argument; so not in the shebang.
+
+fbuild=
+if test $# -gt 0; then
+	case "$1" in
+		-h) echo "$usage"; exit 0;;
+		-V) echo "$version"; echo "$copyright"; exit 0;;
+		-*) echo "Unknow option '$1'" >&2
+		   echo "$usage" >&2
+		   exit 1;;
+	esac
+fi
+
+test $# -eq 0 || { test $# -ge 2 && test $# -le 4; } \
+	|| { echo "$usage" >&2; exit 1; }
+
+nfig=0	# maybe no version asked for; just 'a' python interpreter
+sversion=	# Searched version
+if test $# -ge 2; then
+	case $1 in
+		"<") test_op="lt";;
+		"<=") test_op="le";;
+		"==") test_op="eq";;
+		">=") test_op="ge";;
+		">") test_op="gt";;
+		*) echo "Incorrect condop '$condop'" >&2
+		  echo "$usage" >&2
+		  exit 1;;
+	esac
+	shift
+	cknum $1
+	sversion=$(($1 * 1000 * 1000))
+	nfig=$#
+	shift
+	if test $# -ge 1; then
+		cknum $1
+		sversion=$(($sversion + $1 * 1000))
+		shift
+		if test $# -eq 1; then
+			cknum $1
+			sversion=$(($sversion + $1))
+		fi
+	fi
+fi
+
+# The bversion is for the current "best" version i.e. greatest matching
+# version.
+#
+bversion=0
+
+candidates=
+if test -z "$PYTHON"; then
+	# search PATH for all possible python interpreters
+	#
+	# !!! We are expecting Unix like syntax including under
+	# MSWIN/cygwin or msys*.
+	#
+	for p in $(echo $PATH | sed 'y/:/ /'); do
+		these="$({ cd $p 2>/dev/null && { ls | grep '^python[0-9.]*$'; } 2>/dev/null; } || true)"
+		if test "$these"; then
+			for c in $these; do
+				candidates="$candidates $p/$c"
+			done
+		fi
+	done
+else #
+	candidates="$PYTHON"
+fi
+
+for candidate in ${candidates:-}; do
+	ckver $candidate
+done
+
+if test "$PYTHON"; then
+	echo "$PYTHON"
+	exit 0
+else
+	exit 2
+fi
