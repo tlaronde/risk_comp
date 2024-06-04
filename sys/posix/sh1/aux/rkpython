@@ -4,14 +4,16 @@
 # Env: PYTHON is taken if defined, but verified against requested
 # version.
 #
-# Success: returns on stdout pathname of highest matching version python
-# instance found and exits with 0 status;
+# Success: exits with 0 and returns on stdout pathname and subdir for
+# third parties modules; the instance retained is the highest matching
+# version (if not desired, set en PYTHON with path of wanted
+# instance).
 #
 # Failure: returns nothing on stdout (may print error message on
 # stderr) and set exit status to 1 for syntax error, 2 for no
 # matching version found in PATH.
 #
-version=0.1
+version=0.2
 copyright="Copyright 2024
 	Thierry LARONDE <tlaronde@kergis.com>
 	All rights reserved. 
@@ -55,18 +57,18 @@ cknum()
 
 ckver()
 {
-	_fig=$($1 -c "import sys; print(sys.version_info[0])")
-	test "$_fig" || {
+	_major=$($1 -c "import sys; print(sys.version_info[0])")
+	test "$_major" || {
 		echo "'$1' is incorrect python interpreter" >&2
 		return
 	}
-	_version=$(($_fig * 1000 * 1000))
+	_version=$(($_major * 1000 * 1000))
 	if test $nfig -gt 1; then
-		_fig=$($1 -c "import sys; print(sys.version_info[1])")
-		_version=$(($_version + $_fig * 1000))
+		_minor=$($1 -c "import sys; print(sys.version_info[1])")
+		_version=$(($_version + $_minor * 1000))
 		if test $nfig -eq 3; then
-			_fig=$($1 -c "import sys; print(sys.version_info[2])")
-			_version=$(($_version + $_fig))
+			_micro=$($1 -c "import sys; print(sys.version_info[2])")
+			_version=$(($_version + $_micro))
 		fi
 	fi
 
@@ -78,6 +80,7 @@ ckver()
 	if test "$_version" -gt "$bversion"; then
 		PYTHON="$1"
 		bversion=$_version
+		dversion=$_major.$_minor
 	fi
 }
 
@@ -156,8 +159,15 @@ for candidate in ${candidates:-}; do
 	ckver $candidate
 done
 
+# Using python (sys module) to obtain sys.path would not be of great
+# help: it says only where this instance searches for modules; the user
+# may wish to put these elsewhere---but will have to specify, one way or
+# another this alternative search path to python later.
+# We return the subdir (prefix is not given), that is 'lib/',
+# 'pythonMajor.Minor/site-packages'.
+#
 if test "$PYTHON"; then
-	echo "$PYTHON"
+	echo "$PYTHON lib/python$dversion/site-packages"
 	exit 0
 else
 	exit 2
