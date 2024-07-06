@@ -912,8 +912,8 @@ fi
 if test -s $tmpdir/lexees ; then
 	while read line; do
 	  (
-	  target=$(echo $line | sed -e 's/^ *\([^:]*\):.*$/\1/')
-	  src=$(echo $line | sed -e 's/$/ /' -e 's/^[^:]*: *\([^ 	]*.l\)[ 	].*$/\1/')
+	  target=$(echo $line | sed -e 's/^\([^:]*\):.*$/\1/')
+	  src=$(echo $line | sed -e 's/^[^:]*:[ 	]*\([^ 	]\{1,\}.l\)[ 	]*$/\1/')
 	  if test -s "$tmpdir/LEX_YACC_PREFIX"; then
 		echo "$target : rk_lex_yacc_prefixer.ed $src"
 	  else
@@ -935,14 +935,14 @@ if test -s "$tmpdir/yaccees" ; then
 	while read line; do
 	  (
 	  target=$(echo $line | sed -e 's/^ *\([^:]*\):.*$/\1/')
-	  src=$(echo $line | sed -e 's/$/ /' -e 's/^[^:]*: *\([^ 	]*.y\)[ 	].*$/\1/')
+	  src=$(echo $line | sed -e 's/^[^:]*:[ 	]*\([^ 	]\{1,\}.y\)[ 	]*$/\1/')
 	  if test -s "$tmpdir/LEX_YACC_PREFIX"; then
 		echo "$target : rk_lex_yacc_prefixer.ed $src"
 	  else
 	    echo "$target : $src"
 	  fi
-	  genc=$(echo $line | sed -e 's/^ *\([^:]*\): .*/ \1 /' | sed -n -e 's/^.*[^a-zA-Z0-9_.-]\([^ ][^ ]*\.c\)[^a-zA-Z0-9_-].*$/\1/p')
-	  genh=$(echo $line | sed -e 's/^\([^:]*\) *: .*/ \1 /' | sed -n -e 's/^.*[^a-zA-Z0-9_.-]\([^ ][^ ]*\.h\)[^a-zA-Z0-9_-].*$/\1/p')
+	  genc=$(echo $line | sed -e 's/^\([^:]*\):.*/\1 /' | sed -n -e 's/^\([^ ]\{1,\}\.c\)[^a-zA-Z0-9_-].*$/\1/p')
+	  genh=$(echo $line | sed -e 's/^\([^:]*\):.*/\1 /' | sed -n -e 's/^.*[^a-zA-Z0-9_.-]\([^ ]\{1,\}\.h\)[^a-zA-Z0-9_-].*$/\1/p')
 	  echo '	$(YACC) $(YFLAGS) '$src
 	  echo '	if test "'$genc'" != "y.tab.c"; then mv y.tab.c "'$genc'"; fi'
 	  echo '	if test "'x$genh'" != "x" && test "'$genh'" != "y.tab.h"; then mv y.tab.h "'$genh'"; fi'
@@ -968,8 +968,8 @@ if test -s "$tmpdir/cwebees" ; then
 	while read line; do
 	  i=$(($i + 1))
 	  (
-	  src=$(echo $line | sed -n -e 's/^[^:]*: *\([^ 	][^ 	]*.w\)$/\1/p'\
-	  	-e 's/^[^:]*: *\([^ 	][^ 	]*.w\)[ 	].*$/\1/p')
+	  src=$(echo $line | sed -n -e 's/^[^:]*:[ 	]*\([^ 	]\{1,\}.w\)$/\1/p'\
+	  	-e 's/^[^:]*:[ 	]*\([^ 	]\{1,\}.w\)[ 	].*$/\1/p')
 	  if test "x$src" = x; then continue; fi
 	  ch=$(echo $line | sed -n 's/^[^:]*:.*[ 	]\([^ 	][^ 	]*.ch\)[ 	]*$/\1/p')
 	  echo "$line"
