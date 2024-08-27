@@ -1,10 +1,10 @@
 #!/bin/sh
 # rkbuild: a RISK comp script to build the Makefiles.
 #
-version="$Id: rkbuild,v 1.128 2024/01/27 12:52:36 tlaronde Exp $
+version="2024-08-27a
 Written by Thierry Laronde.
 
-Copyright (c) 2004--2013, 2016--2018, 2020--2021, 2023
+Copyright (c) 2004--2013, 2016--2018, 2020--2021, 2023--2024
 	Thierry Laronde <tlaronde@polynum.org>
 	All rights reserved. KerGIS Public Licence v1.0. NO WARRANTIES!.
 "
@@ -625,19 +625,19 @@ fi
 
 sed 's/$/ /' "$makefile" \
   | sed -n -e '/^[^:]*:[ 	]*[^ 	]*\.l[ 	].*$/p' \
-	-e '/^[^:]*:[ 	]*[^	 ]*\.l$/p'>$tmpdir/lexees
+	>$tmpdir/lexees
 
 #----- YACCEES
 
 sed 's/$/ /' "$makefile" \
   | sed -n -e '/^[^:]*:[ 	]*[^ 	]*\.y[ 	].*$/p' \
-	-e '/^[^:]*:[ 	]*[^ 	]*\.y$/p' >$tmpdir/yaccees
+	>$tmpdir/yaccees
 
 #----- CWEBEES
 
 sed 's/$/ /' "$makefile" \
   | sed -n -e '/^[^:]*:[ 	]*[^ 	]*\.w[ 	].*$/p' \
-	-e '/^[^:]*:[ 	]*[^ 	]*\.w$/p' >$tmpdir/cwebees
+	>$tmpdir/cwebees
 
 #========== LINKAGE HANDLING
 # The LDFLAGS and assimilated will only be needed when linking objects
@@ -913,7 +913,8 @@ if test -s $tmpdir/lexees ; then
 	while read line; do
 	  (
 	  target=$(echo $line | sed -e 's/^\([^:]*\):.*$/\1/')
-	  src=$(echo $line | sed -e 's/^[^:]*:[ 	]*\([^ 	]\{1,\}.l\)[ 	]*$/\1/')
+	  src=$(echo $line | sed -n -e 's/^[^:]*:[ 	]*\([^ 	]\{1,\}.l\)$/\1/p'\
+	  	-e 's/^[^:]*:[ 	]*\([^ 	]\{1,\}.l\)[ 	].*$/\1/p')
 	  if test -s "$tmpdir/LEX_YACC_PREFIX"; then
 		echo "$target : rk_lex_yacc_prefixer.ed $src"
 	  else
@@ -935,7 +936,8 @@ if test -s "$tmpdir/yaccees" ; then
 	while read line; do
 	  (
 	  target=$(echo $line | sed -e 's/^ *\([^:]*\):.*$/\1/')
-	  src=$(echo $line | sed -e 's/^[^:]*:[ 	]*\([^ 	]\{1,\}.y\)[ 	]*$/\1/')
+	  src=$(echo $line | sed -n -e 's/^[^:]*:[ 	]*\([^ 	]\{1,\}.y\)$/\1/p'\
+	  	-e 's/^[^:]*:[ 	]*\([^ 	]\{1,\}.y\)[ 	].*$/\1/p')
 	  if test -s "$tmpdir/LEX_YACC_PREFIX"; then
 		echo "$target : rk_lex_yacc_prefixer.ed $src"
 	  else
