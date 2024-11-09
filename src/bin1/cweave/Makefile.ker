@@ -16,8 +16,8 @@ all: $(PROG)
 
 CWEBINPUTS = $(SRCDIR)
 
-cweave.c: cweave.w common.h
-common.c: common.w common.h risk.ch
+cweave.c: cweave.w commonh.w cweave.ch
+common.c: common.w commonh.w common.ch
 
 $(PROG): $(CTANGLE)
 

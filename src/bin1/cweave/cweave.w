@@ -2,9 +2,11 @@
 % This program by Silvio Levy and Donald E. Knuth
 % is based on a program by Knuth.
 % It is distributed WITHOUT ANY WARRANTY, express or implied.
-% Version 3.64 --- February 2002
+% From version 3.64 --- February 2002
 % (essentially the same as version 3.6, which added
 %  recently introduced features of standard C++ to version 3.4)
+% (In November 2016 I made minor adjustments but changed no code -- DEK)
+% Version 3.65 --- November 2024: \CEE\ strict prototypes T. Laronde
 
 % Copyright (C) 1987,1990,1993,2000 Silvio Levy and Donald E. Knuth
 
@@ -29,11 +31,11 @@
 \def\skipxTeX{\\{skip\_\TEX/}}
 \def\copyxTeX{\\{copy\_\TEX/}}
 
-\def\title{CWEAVE (Version 3.64)}
+\def\title{CWEAVE (Version 3.65)}
 \def\topofcontents{\null\vfill
   \centerline{\titlefont The {\ttitlefont CWEAVE} processor}
   \vskip 15pt
-  \centerline{(Version 3.64)}
+  \centerline{(Version 3.65)}
   \vfill}
 \def\botofcontents{\vfill
 \noindent
@@ -65,7 +67,7 @@ Crusius, and others who have contributed improvements.
 The ``banner line'' defined here should be changed whenever \.{CWEAVE}
 is modified.
 
-@d banner "This is CWEAVE (Version 3.64)\n"
+@d banner "This is CWEAVE (Version 3.65)\n"
 
 @c @<Include files@>@/
 @h
@@ -95,9 +97,9 @@ Please read the documentation for \.{common}, the set of routines common
 to \.{CTANGLE} and \.{CWEAVE}, before proceeding further.
 
 @c
-int main (ac, av)
-int ac; /* argument count */
-char **av; /* argument values */
+int main (
+int ac, /* argument count */
+char **av) /* argument values */
 {
   argc=ac; argv=av;
   program=cweave;
@@ -138,9 +140,9 @@ you have to change them also in the file |"common.w"|.
 
 @ The next few sections contain stuff from the file |"common.w"| that must
 be included in both |"ctangle.w"| and |"cweave.w"|. It appears in
-file |"common.h"|, which needs to be updated when |"common.w"| changes.
+file |"commonh.w"|, which needs to be updated when |"common.w"| changes.
 
-@i common.h
+@i commonh.w
 
 @* Data structures exclusive to {\tt CWEAVE}.
 As explained in \.{common.w}, the field of a |name_info| structure
@@ -273,8 +275,8 @@ If one were careful, one could probably make more changes around section
 
 @c
 void
-new_xref(p)
-name_pointer p;
+new_xref(
+name_pointer p)
 {
   xref_pointer q; /* pointer to previous cross-reference */
   sixteen_bits m, n; /* new and previous cross-reference value */
@@ -304,8 +306,8 @@ is insignificant.
 
 @c
 void
-new_section_xref(p)
-name_pointer p;
+new_section_xref(
+name_pointer p)
 {
   xref_pointer q,r; /* pointers to previous cross-references */
   q=(xref_pointer)p->xref; r=xmem;
@@ -324,8 +326,8 @@ name_pointer p;
 
 @c
 void
-set_file_flag(p)
-name_pointer p;
+set_file_flag(
+name_pointer p)
 {
   xref_pointer q;
   q=(xref_pointer)p->xref;
@@ -368,11 +370,11 @@ max_tok_ptr=tok_mem+1; max_text_ptr=tok_start+1;
 
 @ Here are the three procedures needed to complete |id_lookup|:
 @c
-int names_match(p,first,l,t)
-name_pointer p; /* points to the proposed match */
-char *first; /* position of first character of string */
-int l; /* length of identifier */
-eight_bits t; /* desired ilk */
+int names_match(
+name_pointer p, /* points to the proposed match */
+char *first, /* position of first character of string */
+int l, /* length of identifier */
+eight_bits t) /* desired ilk */
 {
   if (length(p)!=l) return 0;
   if (p->ilk!=t && !(t==normal && abnormal(p))) return 0;
@@ -380,16 +382,16 @@ eight_bits t; /* desired ilk */
 }
 
 void
-init_p(p,t)
-name_pointer p;
-eight_bits t;
+init_p(
+name_pointer p,
+eight_bits t)
 {
   p->ilk=t; p->xref=(char*)xmem;
 }
 
 void
-init_node(p)
-name_pointer p;
+init_node(
+name_pointer p)
 {
   p->xref=(char*)xmem;
 }
@@ -597,11 +599,11 @@ operation appears in limbo, we want to use it to adjust the default
 interpretation of identifiers.
 
 @<Predec...@>=
-void   skip_limbo();
+void   skip_limbo(void);
 
 @ @c
 void
-skip_limbo() {
+skip_limbo(void) {
   while(1) {
     if (loc>limit && get_line()==0) return;
     *(limit+1)='@@';
@@ -623,7 +625,7 @@ assumed to exist at the very end of the file.
 
 @c
 unsigned
-skip_TeX() /* skip past pure \TEX/ code */
+skip_TeX(void) /* skip past pure \TEX/ code */
 {
   while (1) {
     if (loc>limit && get_line()==0) return(new_section);
@@ -693,11 +695,11 @@ compilers even allow the dollar sign.
 @^high-bit character handling@>
 
 @<Predecl...@>=
-eight_bits get_next();
+eight_bits get_next(void);
 
 @ @c
 eight_bits
-get_next() /* produces the next input token */
+get_next(void) /* produces the next input token */
 {@+eight_bits c; /* the current character */
   while (1) {
     @<Check if we're at the end of a preprocessor command@>;
@@ -777,8 +779,8 @@ switch(c) {
     else if (*loc=='/') compress(begin_short_comment); break;
   case '+': if (*loc=='+') compress(plus_plus); break;
   case '-': if (*loc=='-') {compress(minus_minus);}
-    else if (*loc=='>') if (*(loc+1)=='*') {loc++; compress(minus_gt_ast);}
-                        else compress(minus_gt); break;
+    else if (*loc=='>') { if (*(loc+1)=='*') {loc++; compress(minus_gt_ast);}
+                        else compress(minus_gt); } break;
   case '.': if (*loc=='*') {compress(period_ast);}
             else if (*loc=='.' && *(loc+1)=='.') {
               loc++; compress(dot_dot_dot);
@@ -797,7 +799,8 @@ switch(c) {
 
 @ @<Get an identifier@>= {
   id_first=--loc;
-  while (isalpha(*++loc) || isdigit(*loc) || isxalpha(*loc) || ishigh(*loc));
+  while (isalpha((eight_bits)*++loc) || isdigit((eight_bits)*loc)
+   || isxalpha((eight_bits)*loc) || ishigh((eight_bits)*loc));
   id_loc=loc; return(identifier);
 }
 
@@ -832,7 +835,7 @@ are pointers into the array |section_text|, not into |buffer|.
   }
   while (*loc=='u' || *loc=='U' || *loc=='l' || *loc=='L'
          || *loc=='f' || *loc=='F') {
-    *id_loc++='$'; *id_loc++=toupper(*loc); loc++;
+    *id_loc++='$'; *id_loc++=toupper((eight_bits)*loc); loc++;
   }
   return(constant);
 }
@@ -867,10 +870,10 @@ convention, but do not allow the string to be longer than |longest_name|.
       if (++id_loc<=section_text_end) *id_loc=c;
       break;
     }
-    if (c=='\\') if (loc>=limit) continue;
+    if (c=='\\') { if (loc>=limit) continue;
       else if (++id_loc<=section_text_end) {
         *id_loc = '\\'; c=*loc++;
-      }
+      } }
     if (++id_loc<=section_text_end) *id_loc=c;
   }
   if (id_loc>=section_text_end) {
@@ -968,11 +971,11 @@ if (c=='@@') {
 @ This function skips over a restricted context at relatively high speed.
 
 @<Predecl...@>=
-void skip_restricted();
+void skip_restricted(void);
 
 @ @c
 void
-skip_restricted()
+skip_restricted(void)
 {
   id_first=loc; *(limit+1)='@@';
 false_alarm:
@@ -1021,11 +1024,11 @@ eight_bits next_control; /* control code waiting to be acting upon */
 straightforward outline.
 
 @<Predecl...@>=
-void phase_one();
+void phase_one(void);
 
 @ @c
 void
-phase_one() {
+phase_one(void) {
   phase=1; reset_input(); section_count=0;
   skip_limbo(); change_exists=0;
   while (!input_has_ended)
@@ -1073,12 +1076,12 @@ the relations |xref_roman==identifier+roman| and |xref_wildcard==identifier
 as well as |normal==0|.
 
 @<Predecl...@>=
-void C_xref();
+void C_xref(eight_bits);
 
 @ @c
 void
-C_xref( spec_ctrl ) /* makes cross-references for \CEE/ identifiers */
-  eight_bits spec_ctrl;
+C_xref( /* makes cross-references for \CEE/ identifiers */
+  eight_bits spec_ctrl)
 {
   name_pointer p; /* a referenced name */
   while (next_control<format_code || next_control==spec_ctrl) {
@@ -1101,11 +1104,11 @@ with |next_control!='|'| and ends with |next_control>=format_code|. Thus, it
 handles \CEE/ text with embedded comments.
 
 @<Predecl...@>=
-void outer_xref();
+void outer_xref(void);
 
 @ @c
 void
-outer_xref() /* extension of |C_xref| */
+outer_xref(void) /* extension of |C_xref| */
 {
   int bal; /* brace level in comment */
   while (next_control<format_code)
@@ -1263,12 +1266,12 @@ walks through the tree of section names and prints out anomalies.
 @^recursion@>
 
 @<Predecl...@>=
-void section_check();
+void section_check(name_pointer);
 
 @ @c
 void
-section_check(p)
-name_pointer p; /* print anomalies in subtree |p| */
+section_check(
+name_pointer p) /* print anomalies in subtree |p| */
 {
   if (p) {
     section_check(p->llink);
@@ -1298,7 +1301,7 @@ be output.
 
 @<Global...@>=
 char out_buf[line_length+1]; /* assembled characters */
-char *out_ptr; /* just after last character in |out_buf| */
+char *out_ptr; /* last character in |out_buf| */
 char *out_buf_end = out_buf+line_length; /* end of |out_buf| */
 int out_line; /* number of next line to be output */
 
@@ -1320,9 +1323,10 @@ of commented-out text).
 
 @c
 void
-flush_buffer(b,per_cent,carryover)
-char *b;  /* outputs from |out_buf+1| to |b|,where |b<=out_ptr| */
-boolean per_cent,carryover;
+flush_buffer(
+char *b, /* outputs from |out_buf+1| to |b|,where |b<=out_ptr| */
+boolean per_cent,
+boolean carryover)
 {
   char *j; j=b; /* pointer into |out_buf| */
   if (! per_cent) /* remove trailing blanks */
@@ -1349,7 +1353,7 @@ been emitted during the output of translated \CEE/ text.
 
 @c
 void
-finish_line() /* do this at the end of a line */
+finish_line(void) /* do this at the end of a line */
 {
   char *k; /* pointer into |buffer| */
   if (out_ptr>out_buf) flush_buffer(out_ptr,0,0);
@@ -1381,8 +1385,8 @@ A line break will occur at a space or after a single-nonletter
 
 @c
 void
-out_str(s) /* output characters from |s| to end of string */
-char *s;
+out_str( /* output characters from |s| to end of string */
+char *s)
 {
   while (*s) out(*s++);
 }
@@ -1399,11 +1403,11 @@ preceded by another backslash. In the latter case, a |'%'| is output at
 the break.
 
 @<Predecl...@>=
-void break_out();
+void break_out(void);
 
 @ @c
 void
-break_out() /* finds a way to break the output line */
+break_out(void) /* finds a way to break the output line */
 {
   char *k=out_ptr; /* pointer into |out_buf| */
   while (1) {
@@ -1438,8 +1442,8 @@ the section is changed, we output `\.{\\*}' just after the number.
 
 @c
 void
-out_section(n)
-sixteen_bits n;
+out_section(
+sixteen_bits n)
 {
   char s[6];
   sprintf(s,"%d",n); out_str(s);
@@ -1452,9 +1456,9 @@ entry, enclosing it in braces.
 
 @c
 void
-out_name(p,quote_xalpha)
-name_pointer p;
-boolean quote_xalpha;
+out_name(
+name_pointer p,
+boolean quote_xalpha)
 {
   char *k, *k_end=(p+1)->byte_start; /* pointers into |byte_mem| */
   out('{');
@@ -1482,7 +1486,7 @@ The use of `\.{@@}' signs is severely restricted in such material:
 
 @c
 void
-copy_limbo()
+copy_limbo(void)
 {
   char c;
   while (1) {
@@ -1517,7 +1521,7 @@ makes the test for empty lines in |finish_line| work.
 @ @f copy_TeX TeX
 @c
 eight_bits
-copy_TeX()
+copy_TeX(void)
 {
   char c; /* current character being copied */
   while (1) {
@@ -1545,12 +1549,12 @@ one further token without overflow.
 @d app_tok(c) {if (tok_ptr+2>tok_mem_end) overflow("token"); *(tok_ptr++)=c;}
 
 @<Predec...@>=
-int copy_comment();
+int copy_comment(boolean, int);
 
 @ @c
-int copy_comment(is_long_comment,bal) /* copies \TEX/ code in comments */
-boolean is_long_comment; /* is this a traditional \CEE/ comment? */
-int bal; /* brace balance */
+int copy_comment( /* copies \TEX/ code in comments */
+boolean is_long_comment, /* is this a traditional \CEE/ comment? */
+int bal) /* brace balance */
 {
   char c; /* current character being copied */
   while (1) {
@@ -1604,8 +1608,8 @@ if (c=='@@') {
     loc-=2; if (phase==2) *(tok_ptr-1)=' '; goto done;
   }
 }
-else if (c=='\\' && *loc!='@@')
-  if (phase==2) app_tok(*(loc++)) else loc++;
+else if (c=='\\' && *loc!='@@') {
+  if (phase==2) app_tok(*(loc++))@; else loc++; }
 
 @ We output
 enough right braces to keep \TEX/ happy.
@@ -1781,8 +1785,8 @@ eight_bits cat_index;
 
 @c
 void
-print_cat(c) /* symbolic printout of a category */
-eight_bits c;
+print_cat( /* symbolic printout of a category */
+eight_bits c)
 {
   printf(cat_name[c]);
 }
@@ -2136,8 +2140,8 @@ translated without line-break controls.
 
 @c
 void
-print_text(p) /* prints a token list for debugging; not used in |main| */
-text_pointer p;
+print_text( /* prints a token list for debugging; not used in |main| */
+text_pointer p)
 {
   token_pointer j; /* index into |tok_mem| */
   sixteen_bits r; /* remainder of token after the flag has been stripped off */
@@ -2261,15 +2265,15 @@ int cur_mathness, init_mathness;
 
 @ @c
 void
-app_str(s)
-char *s;
+app_str(
+char *s)
 {
   while (*s) app_tok(*(s++));
 }
 
 void
-big_app(a)
-token a;
+big_app(
+token a)
 {
         if (a==' ' || (a>=big_cancel && a<=big_force)) /* non-math token */ {
                 if (cur_mathness==maybe_math) init_mathness=no_math;
@@ -2285,8 +2289,8 @@ token a;
 }
 
 void
-big_app1(a)
-scrap_pointer a;
+big_app1(
+scrap_pointer a)
 {
   switch (a->mathness % 4) { /* left boundary */
   case (no_math):
@@ -2412,8 +2416,8 @@ more properly alphebetized,
 
 @c
 token_pointer
-find_first_ident(p)
-text_pointer p;
+find_first_ident(
+text_pointer p)
 {
   token_pointer q; /* token to be returned */
   token_pointer j; /* token being looked at */
@@ -2444,8 +2448,8 @@ the |for| loop below.
 
 @c
 void
-make_reserved(p) /* make the first identifier in |p->trans| like |int| */
-scrap_pointer p;
+make_reserved( /* make the first identifier in |p->trans| like |int| */
+scrap_pointer p)
 {
   sixteen_bits tok_value; /* the name of this identifier, plus its flag*/
   token_pointer tok_loc; /* pointer to |tok_value| */
@@ -2475,9 +2479,9 @@ it has been swallowed up by an |exp|.
 
 @c
 void
-make_underlined(p)
+make_underlined(
 /* underline the entry for the first identifier in |p->trans| */
-scrap_pointer p;
+scrap_pointer p)
 {
   token_pointer tok_loc; /* where the first identifier appears */
   if ((tok_loc=find_first_ident(p->trans))<=operator_found)
@@ -2492,12 +2496,12 @@ We actually have to search through the list for the existing
 cross-reference.
 
 @<Predecl...@>=
-void  underline_xref();
+void  underline_xref(name_pointer);
 
 @ @c
 void
-underline_xref(p)
-name_pointer p;
+underline_xref(
+name_pointer p)
 {
   xref_pointer q=(xref_pointer)p->xref; /* pointer to cross-reference being examined */
   xref_pointer r; /* temporary pointer for permuting cross-references */
@@ -3001,10 +3005,11 @@ too large, since it is assumed that this test was done beforehand.
 
 @c
 void
-reduce(j,k,c,d,n)
-scrap_pointer j;
-eight_bits c;
-short k, d, n;
+reduce(
+scrap_pointer j,
+short k,
+eight_bits c,
+short d, short n)
 {
   scrap_pointer i, i1; /* pointers into scrap memory */
   j->cat=c; j->trans=text_ptr;
@@ -3027,10 +3032,11 @@ takes advantage of the simplification that occurs when |k==1|.
 
 @c
 void
-squash(j,k,c,d,n)
-scrap_pointer j;
-eight_bits c;
-short k, d, n;
+squash(
+scrap_pointer j,
+short k,
+eight_bits c,
+short d, short n)
 {
   scrap_pointer i; /* pointers into scrap memory */
   if (k==1) {
@@ -3123,7 +3129,7 @@ for overflow.
 
 @c
 text_pointer
-translate() /* converts a sequence of scraps */
+translate(void) /* converts a sequence of scraps */
 {
   scrap_pointer i, /* index into |cat| */
   j; /* runs through final scraps */
@@ -3188,8 +3194,8 @@ is advanced.
 
 @c
 void
-C_parse(spec_ctrl) /* creates scraps from \CEE/ tokens */
-  eight_bits spec_ctrl;
+C_parse( /* creates scraps from \CEE/ tokens */
+  eight_bits spec_ctrl)
 {
   int count; /* characters remaining before string break */
   while (next_control<format_code || next_control==spec_ctrl) {
@@ -3418,12 +3424,12 @@ app(@q{@>'}');
 token list; it also builds a new scrap if |scrapping==1|.
 
 @<Predec...@>=
-void app_cur_id();
+void app_cur_id(boolean);
 
 @ @c
 void
-app_cur_id(scrapping)
-boolean scrapping; /* are we making this into a scrap? */
+app_cur_id(
+boolean scrapping) /* are we making this into a scrap? */
 {
   name_pointer p=id_lookup(id_first,id_loc,normal);
   if (p->ilk<=custom) { /* not a reserved word */
@@ -3447,7 +3453,7 @@ unaffected by this translation process.
 
 @c
 text_pointer
-C_translate()
+C_translate(void)
 {
   text_pointer p; /* points to the translation */
   scrap_pointer save_base; /* holds original value of |scrap_base| */
@@ -3477,7 +3483,7 @@ program text.
 
 @c
 void
-outer_parse() /* makes scraps from \CEE/ tokens and comments */
+outer_parse(void) /* makes scraps from \CEE/ tokens and comments */
 {
   int bal; /* brace level in comment */
   text_pointer p, q; /* partial comments */
@@ -3583,8 +3589,8 @@ The value of |cur_mode| is not changed.
 
 @c
 void
-push_level(p) /* suspends the current level */
-text_pointer p;
+push_level( /* suspends the current level */
+text_pointer p)
 {
   if (stack_ptr==stack_end) overflow("stack");
   if (stack_ptr>stack) { /* save current state */
@@ -3603,7 +3609,7 @@ called when |stack_ptr==1|.
 
 @c
 void
-pop_level()
+pop_level(void)
 {
   cur_end=(--stack_ptr)->end_field;
   cur_tok=stack_ptr->tok_field; cur_mode=stack_ptr->mode_field;
@@ -3625,7 +3631,7 @@ name_pointer cur_name;
 
 @c
 eight_bits
-get_output() /* returns the next token of output */
+get_output(void) /* returns the next token of output */
 {
   sixteen_bits a; /* current item read from |tok_mem| */
   restart: while (cur_tok==cur_end) pop_level();
@@ -3662,7 +3668,7 @@ while outputting the name of a section.
 
 @c
 void
-output_C() /* outputs the current token list */
+output_C(void) /* outputs the current token list */
 {
   token_pointer save_tok_ptr;
   text_pointer save_text_ptr;
@@ -3684,11 +3690,11 @@ output_C() /* outputs the current token list */
 @ Here is \.{CWEAVE}'s major output handler.
 
 @<Predecl...@>=
-void make_output();
+void make_output(void);
 
 @ @c
 void
-make_output() /* outputs the equivalents of tokens */
+make_output(void) /* outputs the equivalents of tokens */
 {
   eight_bits a, /* current output byte */
   b; /* next output byte */
@@ -3890,7 +3896,7 @@ while (k<k_limit) {
 @.\\\_@>
  default: out(b);
     }
-  else if (b!='|') out(b)
+  else if (b!='|') out(b)@;
   else {
     @<Copy the \CEE/ text into the |buffer| array@>;
     save_loc=loc; save_limit=limit; loc=limit+2; limit=j+1;
@@ -3922,11 +3928,11 @@ while (1) {
   }
   b=*(k++);
   if (b=='@@' || (b=='\\' && delim!=0))
-     @<Copy a quoted character into the buffer@>
+     @<Copy a quoted character into the buffer@>@;
   else {
-    if (b=='\'' || b=='"')
+    if (b=='\'' || b=='"') {
       if (delim==0) delim=b;
-      else if (delim==b) delim=0;
+      else if (delim==b) delim=0; }
     if (b!='|' || delim!=0) {
       if (j>buffer+long_buf_size-3) overflow("buffer");
       *(++j)=b;
@@ -3948,11 +3954,11 @@ actually output the \TEX/ material instead of merely looking at the
 \.{CWEB} specifications.
 
 @<Predecl...@>=
-void phase_two();
+void phase_two(void);
 
 @ @c
 void
-phase_two() {
+phase_two(void) {
 reset_input(); if (show_progress) printf("\nWriting the output file...");
 @.Writing the output file...@>
 section_count=0; format_visible=1; copy_limbo();
@@ -4071,12 +4077,12 @@ takes place, so that the translation will normally end with \.{\\6} or
 \.{\\7} is replaced by the concluding \.{\\par} or by \.{\\Y\\par}.
 
 @<Predecl...@>=
-void finish_C();
+void finish_C(boolean);
 
 @ @c
 void
-finish_C(visible) /* finishes a definition or a \CEE/ part */
-  boolean visible; /* nonzero if we should produce \TEX/ output */
+finish_C( /* finishes a definition or a \CEE/ part */
+  boolean visible) /* nonzero if we should produce \TEX/ output */
 {
   text_pointer p; /* translation of the scraps */
   if (visible) {
@@ -4084,13 +4090,14 @@ finish_C(visible) /* finishes a definition or a \CEE/ part */
     p=translate();
 @.\\B@>
     app(tok_flag+(int)(p-tok_start)); make_output(); /* output the list */
-    if (out_ptr>out_buf+1)
-      if (*(out_ptr-1)=='\\')
+    if (out_ptr>out_buf+1) {
+      if (*(out_ptr-1)=='\\') {
 @.\\6@>
 @.\\7@>
 @.\\Y@>
         if (*out_ptr=='6') out_ptr-=2;
-        else if (*out_ptr=='7') *out_ptr='Y';
+        else if (*out_ptr=='7') *out_ptr='Y'; }
+      }
     out_str("\\par"); finish_line();
   }
   if (text_ptr>max_text_ptr) max_text_ptr=text_ptr;
@@ -4242,12 +4249,12 @@ Note that the output of \.{CWEAVE} is not English-specific; users may
 supply new definitions for the macros \.{\\A}, \.{\\As}, etc.
 
 @<Predecl...@>=
-void footnote();
+void footnote(sixteen_bits);
 
 @ @c
 void
-footnote(flag) /* outputs section cross-references */
-sixteen_bits flag;
+footnote( /* outputs section cross-references */
+sixteen_bits flag)
 {
   xref_pointer q; /* cross-reference pointer variable */
   if (cur_xref->num<=flag) return;
@@ -4291,11 +4298,11 @@ just finish off the page, omitting the index, section name list, and table of
 contents.
 
 @<Predecl...@>=
-void phase_three();
+void phase_three(void);
 
 @ @c
 void
-phase_three() {
+phase_three(void) {
 if (no_xref) {
   finish_line();
   out_str("\\end");
@@ -4471,14 +4478,14 @@ regarded as identical.
 @d infinity 255 /* $\infty$ (approximately) */
 
 @<Predecl...@>=
-void  unbucket();
+void  unbucket(eight_bits);
 
 @ @c
 void
-unbucket(d) /* empties buckets having depth |d| */
-eight_bits d;
+unbucket( /* empties buckets having depth |d| */
+eight_bits d)
 {
-  int c;  /* index into |bucket|; cannot be a simple |char| because of sign
+  int c; /* index into |bucket|; cannot be a simple |char| because of sign
     comparison below*/
   for (c=100+128; c>= 0; c--) if (bucket[collate[c]]) {
 @^high-bit character handling@>
@@ -4591,12 +4598,12 @@ prints them.
 @^recursion@>
 
 @<Predecl...@>=
-void section_print();
+void section_print(name_pointer);
 
 @ @c
 void
-section_print(p) /* print all section names in subtree |p| */
-name_pointer p;
+section_print( /* print all section names in subtree |p| */
+name_pointer p)
 {
   if (p) {
     section_print(p->llink); out_str("\\I");
@@ -4617,7 +4624,7 @@ rather than an |int|, we use \.{\%ld} to print these quantities.
 
 @c
 void
-print_stats() {
+print_stats(void) {
   printf("\nMemory usage statistics:\n");
 @.Memory usage statistics:@>
   printf("%ld names (out of %ld)\n",
@@ -4639,6 +4646,47 @@ print_stats() {
   printf("%ld levels (out of %ld)\n",
             (long)(max_sort_ptr-scrap_info),(long)max_scraps);
 }
+
+@ Some routines were not predeclared because they are defined before
+being used. But compilers with some switches set can complain or even
+error out for this. So declare them finally, in the order they are
+introduced in the text. This added module is put last in order to keep
+the numbered on the printed material still accurate.
+
+@<Predecl...@>=
+void new_xref(name_pointer);
+void new_section_xref(name_pointer);
+void set_file_flag(name_pointer);
+int names_match(name_pointer, char *, int, eight_bits);
+void init_p(name_pointer, eight_bits);
+void init_node(name_pointer);
+unsigned skip_TeX(void);
+void flush_buffer(char *, boolean, boolean);
+void finish_line(void);
+void out_str(char *);
+void out_section(sixteen_bits);
+void out_name(name_pointer, boolean);
+void copy_limbo(void);
+eight_bits copy_TeX(void);
+void print_cat(eight_bits);
+void print_text(text_pointer);
+void app_str(char *);
+void big_app(token);
+void big_app1(scrap_pointer);
+token_pointer find_first_ident(text_pointer);
+void make_reserved(scrap_pointer);
+void make_underlined(scrap_pointer);
+void reduce(scrap_pointer, short, eight_bits, short, short);
+void squash(scrap_pointer, short, eight_bits, short, short);
+text_pointer translate(void);
+void C_parse(eight_bits);
+text_pointer C_translate(void);
+void outer_parse(void);
+void push_level(text_pointer);
+void pop_level(void);
+eight_bits get_output(void);
+void output_C(void);
+void print_stats(void);
 
 @** Index.
 If you have read and understood the code for Phase III above, you know what
