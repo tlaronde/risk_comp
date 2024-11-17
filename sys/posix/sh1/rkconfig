@@ -305,7 +305,7 @@ error()
 	  sysconf_not_found) log "System conf file $2 not found!";
 		log "Search path was $confpath";;
 	  unable_to_mkdir) log "Unable to make dir $2!";;
-	  wrong_api) log "The requested rkcomp version: $RK_API_VERSION doesn't match my version: $rk_api_version!";;
+	  wrong_api) log "The requested rkcomp version: $RK_API_VERSION doesn't match my version: $rk_api_major.$rk_api_minor!";;
 	  wrong_confdir) log "$PROJECTDIR/conf has the wrong number of PROJECT files!";;
 	  wrong_map_format) log "'$2' map(s) has|have syntax errors!";;
 	  wrong_projectdir) log "Dir: $2 does not exist!";

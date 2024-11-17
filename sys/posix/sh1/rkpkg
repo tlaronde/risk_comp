@@ -2,7 +2,7 @@
 # rkpkg: a KerGIS tools script to create the archive package holding
 # the result
 #
-version="$Id: rkpkg,v 1.56 2022/05/06 13:24:49 tlaronde Exp $
+version="v1.20
 Written by Thierry Laronde.
 
 Copyright (c) 2004--2013, 2016--2017, 2020--2021
