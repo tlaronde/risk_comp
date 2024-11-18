@@ -130,9 +130,9 @@ rowit ()
 		fi
 		if test ${#_row} -ge $_max; then
 			if test $_escape = YES && test $_iline -ne $_nline; then
-				printf '%s%s\\\n' "$_prefix" "$_row"
+				echo "$_prefix$_row\\"
 			else
-				printf '%s%s\n' "$_prefix" "$_row"
+				echo "$_prefix$_row"
 			fi
 			_row=
 		fi
@@ -141,7 +141,7 @@ rowit ()
 		fi
 	done <"$_file"
 	if test -n "$_row"; then
-		printf '%s%s\n' "$_prefix" "$_row"
+		echo "$_prefix$_row"
 	fi
 }
 
@@ -1011,7 +1011,7 @@ if test -s "$tmpdir/CFILES"; then
 /g' "$tmpdir/cobj"\
 		| sed -n '/\.o$/p' >"$tmpdir/cobj_only"
 	{
-	printf "COBJ = "
+	echo "COBJ = \\"
 	rowit "" "$tmpdir/cobj_only" YES
 	} >>"$makefile"
 elif test -s "$tmpdir/COBJ"; then
@@ -1094,7 +1094,7 @@ elif test "x$is_lib" = "xYES" ; then
 		| sed -n '/\.dso$/p' >"$tmpdir/dsh_obj"
 	  SONAME=$(rk_mk_elf_soname $(basename $(cat "$tmpdir/LIB")))
 	  LDFLAGS_ELF_SONAME=$(echo $LDFLAGS_ELF_SONAME | sed 's/##SONAME##/'$SONAME/)
-	  printf "DSH_COBJ = "
+	  echo -n "DSH_COBJ = "
 	  rowit "" "$tmpdir/dsh_obj" YES
 	  echo
 	  echo '$(DSH_LIB): $(DSH_COBJ)'
