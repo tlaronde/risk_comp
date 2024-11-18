@@ -913,8 +913,8 @@ fi
 
 # verify the rkcomp API requested by the PROJECT
 #
-if test "$(echo $RK_API_VERSION | sed 's/^\([0-9]\{1,\}\).*$/\1/')" != $rk_api_major\
-	|| test "$(echo $RK_API_VERSION | sed 's/^[0-9]\{1,\}\.\([0-9]\{1,\}\).*$/\1/')" -gt $rk_api_minor; then
+if test "$(echo $RK_API_VERSION | sed 's/^\([0-9][0-9]*\).*$/\1/')" != $rk_api_major\
+	|| test "$(echo $RK_API_VERSION | sed 's/^[0-9][0-9]*\.\([0-9][0-9]*\).*$/\1/')" -gt $rk_api_minor; then
 	error wrong_api
 fi
 

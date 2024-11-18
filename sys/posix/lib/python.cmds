@@ -53,9 +53,9 @@ v2i()
 #
 Tpython()
 {
-	operator=$(echo $1 | sed 's/^\([<=>]\{1,2\}\)[0-9]\{1,\}[.0-9]*$/\1/')
-	version=$(echo $1 | sed 's/^[<=>]\{1,2\}\([0-9]\{1,\}[.0-9]*\)$/\1/')
-	test "$operator" && test "$version"\
+	operator=$(echo $1 | sed 's/^\([<=>][<=>]*\)[0-9][0-9]*[.0-9]*$/\1/')
+	version=$(echo $1 | sed 's/^[<=>][<=>]*\([0-9][0-9]*[.0-9]*\)$/\1/')
+	test "${#operator}" -le 2 && test "$operator" && test "$version"\
 		|| {
 			log "Tpython(): incorrect condition '$1'"
 			return

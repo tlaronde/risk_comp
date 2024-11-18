@@ -694,7 +694,7 @@ fi
 #
 if test "x$GLOBALLIB" != x; then
 	echo "$GLOBALLIB" | sed -e 's/^[ 	]*//' \
-		-e 's/[ 	]*$//' -e 's/[ 	]\{1,\}/ /g' \
+		-e 's/[ 	]*$//' -e 's/[ 	][ 	]*/ /g' \
 		-e 's/ /\
 /g'\
 		| sed '/^$/d' >>"$tmpdir/LIBES"
@@ -913,8 +913,8 @@ if test -s $tmpdir/lexees ; then
 	while read line; do
 	  (
 	  target=$(echo $line | sed -e 's/^\([^:]*\):.*$/\1/')
-	  src=$(echo $line | sed -n -e 's/^[^:]*:[ 	]*\([^ 	]\{1,\}.l\)$/\1/p'\
-	  	-e 's/^[^:]*:[ 	]*\([^ 	]\{1,\}.l\)[ 	].*$/\1/p')
+	  src=$(echo $line | sed -n -e 's/^[^:]*:[ 	]*\([^ 	][^ 	]*.l\)$/\1/p'\
+	  	-e 's/^[^:]*:[ 	]*\([^ 	][^ 	]*.l\)[ 	].*$/\1/p')
 	  if test -s "$tmpdir/LEX_YACC_PREFIX"; then
 		echo "$target : rk_lex_yacc_prefixer.ed $src"
 	  else
@@ -936,15 +936,15 @@ if test -s "$tmpdir/yaccees" ; then
 	while read line; do
 	  (
 	  target=$(echo $line | sed -e 's/^ *\([^:]*\):.*$/\1/')
-	  src=$(echo $line | sed -n -e 's/^[^:]*:[ 	]*\([^ 	]\{1,\}.y\)$/\1/p'\
-	  	-e 's/^[^:]*:[ 	]*\([^ 	]\{1,\}.y\)[ 	].*$/\1/p')
+	  src=$(echo $line | sed -n -e 's/^[^:]*:[ 	]*\([^ 	][^ 	]*.y\)$/\1/p'\
+	  	-e 's/^[^:]*:[ 	]*\([^ 	][^ 	]*.y\)[ 	].*$/\1/p')
 	  if test -s "$tmpdir/LEX_YACC_PREFIX"; then
 		echo "$target : rk_lex_yacc_prefixer.ed $src"
 	  else
 	    echo "$target : $src"
 	  fi
-	  genc=$(echo $line | sed -e 's/^\([^:]*\):.*/\1 /' | sed -n -e 's/^\([^ ]\{1,\}\.c\)[^a-zA-Z0-9_-].*$/\1/p')
-	  genh=$(echo $line | sed -e 's/^\([^:]*\):.*/\1 /' | sed -n -e 's/^.*[^a-zA-Z0-9_.-]\([^ ]\{1,\}\.h\)[^a-zA-Z0-9_-].*$/\1/p')
+	  genc=$(echo $line | sed -e 's/^\([^:]*\):.*/\1 /' | sed -n -e 's/^\([^ ][^ ]*\.c\)[^a-zA-Z0-9_-].*$/\1/p')
+	  genh=$(echo $line | sed -e 's/^\([^:]*\):.*/\1 /' | sed -n -e 's/^.*[^a-zA-Z0-9_.-]\([^ ][^ ]*\.h\)[^a-zA-Z0-9_-].*$/\1/p')
 	  echo '	$(YACC) $(YFLAGS) '$src
 	  echo '	if test "'$genc'" != "y.tab.c"; then mv y.tab.c "'$genc'"; fi'
 	  echo '	if test "'x$genh'" != "x" && test "'$genh'" != "y.tab.h"; then mv y.tab.h "'$genh'"; fi'
@@ -970,8 +970,8 @@ if test -s "$tmpdir/cwebees" ; then
 	while read line; do
 	  i=$(($i + 1))
 	  (
-	  src=$(echo $line | sed -n -e 's/^[^:]*:[ 	]*\([^ 	]\{1,\}.w\)$/\1/p'\
-	  	-e 's/^[^:]*:[ 	]*\([^ 	]\{1,\}.w\)[ 	].*$/\1/p')
+	  src=$(echo $line | sed -n -e 's/^[^:]*:[ 	]*\([^ 	][^ 	]*.w\)$/\1/p'\
+	  	-e 's/^[^:]*:[ 	]*\([^ 	][^ 	]*.w\)[ 	].*$/\1/p')
 	  if test "x$src" = x; then continue; fi
 	  ch=$(echo $line | sed -n 's/^[^:]*:.*[ 	]\([^ 	][^ 	]*.ch\)[ 	]*$/\1/p')
 	  echo "$line"
@@ -1007,7 +1007,7 @@ if test -s "$tmpdir/CFILES"; then
 	"$tmpdir/CFILES"\
 	| sed -f "$tmpdir/sed"\
 	>"$tmpdir/cobj"
-	sed 's/[ 	]\{1,\}/\
+	sed 's/[ 	][ 	]*/\
 /g' "$tmpdir/cobj"\
 		| sed -n '/\.o$/p' >"$tmpdir/cobj_only"
 	{
